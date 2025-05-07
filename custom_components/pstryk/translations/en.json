@@ -14,6 +14,7 @@
       "invalid_auth": "Invalid API token, please check your credentials.",
       "cannot_connect": "Failed to connect to Pstryk.pl API, please try again later.",
       "timeout_error": "Connection to Pstryk.pl API timed out, please check your internet connection.",
+      "invalid_response": "Received an invalid response from the Pstryk.pl API. Try again later.",
       "unknown": "An unexpected error occurred while connecting to Pstryk.pl API."
     },
     "abort": {

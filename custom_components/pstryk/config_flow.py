@@ -33,17 +33,32 @@ async def validate_api_token(hass: HomeAssistant, api_token: str) -> tuple[bool,
     If is_valid is True, error_message will be an empty string.
     """
     session = async_get_clientsession(hass)
-    headers = {"Authorization": f"{api_token}"}
+    headers = {"Authorization": f"{api_token}", "Accept": "application/json"}
     now = dt_util.utcnow()
-    start_utc = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-    end_utc = (now + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    tomorrow = today + timedelta(days=1)
+    
+    start_utc = today.strftime("%Y-%m-%dT%H:%M:%SZ")
+    end_utc = tomorrow.strftime("%Y-%m-%dT%H:%M:%SZ")
     
     try:
         async with session.get(
-            f"{API_BASE_URL}/pricing/?resolution=hour&window_start={start_utc}&window_end={end_utc}", headers=headers, timeout=30
+            f"{API_BASE_URL}/pricing/?resolution=hour&window_start={start_utc}&window_end={end_utc}", 
+            headers=headers, 
+            timeout=30
         ) as response:
             if response.status == 200:
-                return True, ""
+                # Verify we can parse the response
+                try:
+                    data = await response.json()
+                    if "frames" in data:
+                        return True, ""
+                    else:
+                        _LOGGER.error("API response missing 'frames' field")
+                        return False, "invalid_response"
+                except Exception as err:
+                    _LOGGER.error("Error parsing API response: %s", err)
+                    return False, "invalid_response"
             elif response.status == 401 or response.status == 403:
                 return False, "invalid_auth"
             else:

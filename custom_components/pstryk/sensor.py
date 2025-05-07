@@ -1,7 +1,7 @@
 """Sensor platform for Pstryk.pl integration."""
 from datetime import datetime, timedelta
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -9,12 +9,12 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
 )
+from homeassistant.util import dt as dt_util
 
 from .const import COORDINATOR, DOMAIN
 from .coordinator import PstrykDataUpdateCoordinator
@@ -73,29 +73,11 @@ class PstrykBuyPriceSensor(PstrykBaseSensor):
         if not self.coordinator.data or "buy" not in self.coordinator.data:
             return None
             
-        # Logic to extract current price from the data
-        # This will need to be adjusted based on the actual API response structure
         try:
-            now = datetime.now().astimezone()
-            now_utc = now.astimezone(datetime.timezone.utc)
-            current_hour_utc = now_utc.replace(minute=0, second=0, microsecond=0)
             data = self.coordinator.data["buy"]
-            
-            # Assuming data contains a list of hourly prices
-            # Find the current hour's price
-            current_price = None
-            for price_data in data.get("prices", []):
-                price_datetime = datetime.fromisoformat(price_data.get("timestamp"))
-                # Convert to UTC for comparison
-                if price_datetime.tzinfo is None:
-                    price_datetime = price_datetime.replace(tzinfo=datetime.timezone.utc)
-                if price_datetime == current_hour_utc:
-                    current_price = price_data.get("price")
-                    break
-                    
-            return current_price
-        except (KeyError, ValueError, AttributeError) as error:
-            _LOGGER.error("Error extracting buy price: %s", error)
+            return data.get("current_price")
+        except Exception as error:
+            _LOGGER.error("Error retrieving buy price: %s", error)
             return None
 
     @property
@@ -104,53 +86,58 @@ class PstrykBuyPriceSensor(PstrykBaseSensor):
         if not self.coordinator.data or "buy" not in self.coordinator.data:
             return {}
             
-        # Extract additional data for the attributes
-        attributes = {}
-        
-        # This will need to be adjusted based on the actual API response structure
         try:
-            now = datetime.now().astimezone()
-            now_utc = now.astimezone(datetime.timezone.utc)
-            next_hour_utc = (now_utc.replace(minute=0, second=0, microsecond=0) + 
-                           timedelta(hours=1))
+            now = dt_util.now()
             data = self.coordinator.data["buy"]
+            prices = data.get("prices", [])
             
-            # Extract today's and tomorrow's prices
+            # Group prices by date
             today_prices = []
             tomorrow_prices = []
             next_hour_price = None
             
-            for price_data in data.get("prices", []):
-                price_datetime = datetime.fromisoformat(price_data.get("timestamp"))
+            for price_data in prices:
+                timestamp = price_data.get("timestamp")
+                if not timestamp:
+                    continue
+                    
+                price_datetime = dt_util.parse_datetime(timestamp)
+                if not price_datetime:
+                    continue
+                    
                 price = price_data.get("price")
+                if price is None:
+                    continue
+                    
+                price_local = dt_util.as_local(price_datetime)
                 
-                # Convert to UTC for comparison
-                if price_datetime.tzinfo is None:
-                    price_datetime = price_datetime.replace(tzinfo=datetime.timezone.utc)
-                
-                if price_datetime.date() == now_utc.date():
+                # Check if price is for today or tomorrow
+                if price_local.date() == now.date():
                     today_prices.append({
-                        "hour": price_datetime.hour,
+                        "hour": price_local.hour,
                         "price": price
                     })
-                elif price_datetime.date() == (now_utc.date() + timedelta(days=1)):
+                elif price_local.date() == (now.date() + timedelta(days=1)):
                     tomorrow_prices.append({
-                        "hour": price_datetime.hour,
+                        "hour": price_local.hour,
                         "price": price
                     })
                     
-                if price_datetime == next_hour_utc:
+                # Check if price is for next hour
+                next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+                if price_local.hour == next_hour.hour and price_local.date() == next_hour.date():
                     next_hour_price = price
             
+            attributes = {}
             if today_prices:
-                attributes["prices_today"] = today_prices
+                attributes["prices_today"] = sorted(today_prices, key=lambda x: x["hour"])
             if tomorrow_prices:
-                attributes["prices_tomorrow"] = tomorrow_prices
+                attributes["prices_tomorrow"] = sorted(tomorrow_prices, key=lambda x: x["hour"])
             if next_hour_price is not None:
                 attributes["next_hour_price"] = next_hour_price
                 
             return attributes
-        except (KeyError, ValueError, AttributeError) as error:
+        except Exception as error:
             _LOGGER.error("Error extracting buy price attributes: %s", error)
             return {}
 
@@ -168,29 +155,11 @@ class PstrykSellPriceSensor(PstrykBaseSensor):
         if not self.coordinator.data or "sell" not in self.coordinator.data:
             return None
             
-        # Logic to extract current price from the data
-        # This will need to be adjusted based on the actual API response structure
         try:
-            now = datetime.now().astimezone()
-            now_utc = now.astimezone(datetime.timezone.utc)
-            current_hour_utc = now_utc.replace(minute=0, second=0, microsecond=0)
             data = self.coordinator.data["sell"]
-            
-            # Assuming data contains a list of hourly prices
-            # Find the current hour's price
-            current_price = None
-            for price_data in data.get("prices", []):
-                price_datetime = datetime.fromisoformat(price_data.get("timestamp"))
-                # Convert to UTC for comparison
-                if price_datetime.tzinfo is None:
-                    price_datetime = price_datetime.replace(tzinfo=datetime.timezone.utc)
-                if price_datetime == current_hour_utc:
-                    current_price = price_data.get("price")
-                    break
-                    
-            return current_price
-        except (KeyError, ValueError, AttributeError) as error:
-            _LOGGER.error("Error extracting sell price: %s", error)
+            return data.get("current_price")
+        except Exception as error:
+            _LOGGER.error("Error retrieving sell price: %s", error)
             return None
 
     @property
@@ -199,52 +168,57 @@ class PstrykSellPriceSensor(PstrykBaseSensor):
         if not self.coordinator.data or "sell" not in self.coordinator.data:
             return {}
             
-        # Extract additional data for the attributes
-        attributes = {}
-        
-        # This will need to be adjusted based on the actual API response structure
         try:
-            now = datetime.now().astimezone()
-            now_utc = now.astimezone(datetime.timezone.utc)
-            next_hour_utc = (now_utc.replace(minute=0, second=0, microsecond=0) + 
-                           timedelta(hours=1))
+            now = dt_util.now()
             data = self.coordinator.data["sell"]
+            prices = data.get("prices", [])
             
-            # Extract today's and tomorrow's prices
+            # Group prices by date
             today_prices = []
             tomorrow_prices = []
             next_hour_price = None
             
-            for price_data in data.get("prices", []):
-                price_datetime = datetime.fromisoformat(price_data.get("timestamp"))
+            for price_data in prices:
+                timestamp = price_data.get("timestamp")
+                if not timestamp:
+                    continue
+                    
+                price_datetime = dt_util.parse_datetime(timestamp)
+                if not price_datetime:
+                    continue
+                    
                 price = price_data.get("price")
+                if price is None:
+                    continue
+                    
+                price_local = dt_util.as_local(price_datetime)
                 
-                # Convert to UTC for comparison
-                if price_datetime.tzinfo is None:
-                    price_datetime = price_datetime.replace(tzinfo=datetime.timezone.utc)
-                
-                if price_datetime.date() == now_utc.date():
+                # Check if price is for today or tomorrow
+                if price_local.date() == now.date():
                     today_prices.append({
-                        "hour": price_datetime.hour,
+                        "hour": price_local.hour,
                         "price": price
                     })
-                elif price_datetime.date() == (now_utc.date() + timedelta(days=1)):
+                elif price_local.date() == (now.date() + timedelta(days=1)):
                     tomorrow_prices.append({
-                        "hour": price_datetime.hour,
+                        "hour": price_local.hour,
                         "price": price
                     })
                     
-                if price_datetime == next_hour_utc:
+                # Check if price is for next hour
+                next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+                if price_local.hour == next_hour.hour and price_local.date() == next_hour.date():
                     next_hour_price = price
             
+            attributes = {}
             if today_prices:
-                attributes["prices_today"] = today_prices
+                attributes["prices_today"] = sorted(today_prices, key=lambda x: x["hour"])
             if tomorrow_prices:
-                attributes["prices_tomorrow"] = tomorrow_prices
+                attributes["prices_tomorrow"] = sorted(tomorrow_prices, key=lambda x: x["hour"])
             if next_hour_price is not None:
                 attributes["next_hour_price"] = next_hour_price
                 
             return attributes
-        except (KeyError, ValueError, AttributeError) as error:
+        except Exception as error:
             _LOGGER.error("Error extracting sell price attributes: %s", error)
             return {}
