@@ -1,6 +1,7 @@
 """Config flow for Pstryk.pl integration."""
 import asyncio
 import logging
+from datetime import timedelta
 from typing import Any
 
 import aiohttp
@@ -11,6 +12,7 @@ from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.util import dt as dt_util
 
 from .const import API_BASE_URL, CONF_API_TOKEN, DOMAIN
 
@@ -32,10 +34,13 @@ async def validate_api_token(hass: HomeAssistant, api_token: str) -> tuple[bool,
     """
     session = async_get_clientsession(hass)
     headers = {"Authorization": f"{api_token}"}
+    now = dt_util.utcnow()
+    start_utc = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    end_utc = (now + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     
     try:
         async with session.get(
-            f"{API_BASE_URL}/pricing/?limit=1", headers=headers, timeout=10
+            f"{API_BASE_URL}/pricing/?resolution=hour&window_start={start_utc}&window_end={end_utc}", headers=headers, timeout=30
         ) as response:
             if response.status == 200:
                 return True, ""
