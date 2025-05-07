@@ -1,0 +1,40 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Pstryk.pl",
+        "description": "Enter your Pstryk.pl API token to connect with your account.",
+        "data": {
+          "api_token": "API Token",
+          "name": "Name"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid API token, please check your credentials."
+    },
+    "abort": {
+      "already_configured": "Pstryk.pl is already configured."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "pstryk_buy_price": {
+        "name": "Buying Electricity Price",
+        "state_attributes": {
+          "prices_today": "Today's prices",
+          "prices_tomorrow": "Tomorrow's prices",
+          "next_hour_price": "Next hour price"
+        }
+      },
+      "pstryk_sell_price": {
+        "name": "Selling Electricity Price",
+        "state_attributes": {
+          "prices_today": "Today's prices",
+          "prices_tomorrow": "Tomorrow's prices",
+          "next_hour_price": "Next hour price"
+        }
+      }
+    }
+  }
+}

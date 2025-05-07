@@ -1,0 +1,9 @@
+{
+  "name": "Pstryk",
+  "domains": ["sensor"],
+  "content_in_root": false,
+  "country": "PL",
+  "render_readme": true,
+  "documentation": "https://github.com/Bankilo/pstryk-home-assistant/blob/main/README.md",
+  "issue_tracker": "https://github.com/Bankilo/pstryk-home-assistant/issues"
+}

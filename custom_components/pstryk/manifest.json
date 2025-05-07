@@ -1,0 +1,12 @@
+{
+  "domain": "pstryk",
+  "name": "Pstryk.pl",
+  "documentation": "https://github.com/user/pstryk-home-assistant",
+  "issue_tracker": "https://github.com/user/pstryk-home-assistant/issues",
+  "dependencies": [],
+  "config_flow": true,
+  "codeowners": ["@user"],
+  "requirements": ["aiohttp>=3.8.1"],
+  "iot_class": "cloud_polling",
+  "version": "0.1.0"
+}
