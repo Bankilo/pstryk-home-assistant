@@ -1,6 +1,6 @@
 """Data update coordinator for the Pstryk.pl integration."""
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 from typing import Any
 
@@ -54,7 +54,7 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
     async def _fetch_buy_data(self) -> dict[str, Any]:
         """Fetch buying price data from the API."""
         now = datetime.now().astimezone()
-        now_utc = now.astimezone(datetime.timezone.utc)
+        now_utc = now.astimezone(timezone.utc)
         start = (now_utc - timedelta(days=1)).strftime("%Y-%m-%d")
         end = (now_utc + timedelta(days=2)).strftime("%Y-%m-%d")
         
@@ -77,7 +77,7 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
     async def _fetch_sell_data(self) -> dict[str, Any]:
         """Fetch selling price data from the API."""
         now = datetime.now().astimezone()
-        now_utc = now.astimezone(datetime.timezone.utc)
+        now_utc = now.astimezone(timezone.utc)
         start = (now_utc - timedelta(days=1)).strftime("%Y-%m-%d")
         end = (now_utc + timedelta(days=2)).strftime("%Y-%m-%d")
         
