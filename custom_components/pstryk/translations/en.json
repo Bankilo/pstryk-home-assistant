@@ -11,7 +11,10 @@
       }
     },
     "error": {
-      "invalid_auth": "Invalid API token, please check your credentials."
+      "invalid_auth": "Invalid API token, please check your credentials.",
+      "cannot_connect": "Failed to connect to Pstryk.pl API, please try again later.",
+      "timeout_error": "Connection to Pstryk.pl API timed out, please check your internet connection.",
+      "unknown": "An unexpected error occurred while connecting to Pstryk.pl API."
     },
     "abort": {
       "already_configured": "Pstryk.pl is already configured."

@@ -60,12 +60,19 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
         
         url = f"{API_BASE_URL}/{BUY_ENDPOINT.format(start=start, end=end)}"
         
-        async with self._session.get(url, headers=self._headers, timeout=10) as response:
-            if response.status != 200:
-                raise aiohttp.ClientError(
-                    f"Error fetching buy data: {response.status}"
-                )
-            return await response.json()
+        try:
+            async with self._session.get(url, headers=self._headers, timeout=10) as response:
+                if response.status == 200:
+                    return await response.json()
+                elif response.status == 401 or response.status == 403:
+                    _LOGGER.error("Authentication failed when fetching buy data. API token may be invalid.")
+                    raise aiohttp.ClientError("Authentication failed, API token may be invalid")
+                else:
+                    _LOGGER.error("Error fetching buy data: %s", response.status)
+                    raise aiohttp.ClientError(f"Error fetching buy data: {response.status}")
+        except asyncio.TimeoutError:
+            _LOGGER.error("Timeout when fetching buy data from Pstryk API")
+            raise
 
     async def _fetch_sell_data(self) -> dict[str, Any]:
         """Fetch selling price data from the API."""
@@ -76,9 +83,16 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
         
         url = f"{API_BASE_URL}/{SELL_ENDPOINT.format(start=start, end=end)}"
         
-        async with self._session.get(url, headers=self._headers, timeout=10) as response:
-            if response.status != 200:
-                raise aiohttp.ClientError(
-                    f"Error fetching sell data: {response.status}"
-                )
-            return await response.json()
+        try:
+            async with self._session.get(url, headers=self._headers, timeout=10) as response:
+                if response.status == 200:
+                    return await response.json()
+                elif response.status == 401 or response.status == 403:
+                    _LOGGER.error("Authentication failed when fetching sell data. API token may be invalid.")
+                    raise aiohttp.ClientError("Authentication failed, API token may be invalid")
+                else:
+                    _LOGGER.error("Error fetching sell data: %s", response.status)
+                    raise aiohttp.ClientError(f"Error fetching sell data: {response.status}")
+        except asyncio.TimeoutError:
+            _LOGGER.error("Timeout when fetching sell data from Pstryk API")
+            raise

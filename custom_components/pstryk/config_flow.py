@@ -1,4 +1,5 @@
 """Config flow for Pstryk.pl integration."""
+import asyncio
 import logging
 from typing import Any
 
@@ -23,18 +24,35 @@ DATA_SCHEMA = vol.Schema(
 )
 
 
-async def validate_api_token(hass: HomeAssistant, api_token: str) -> bool:
-    """Validate the API token by making a test request."""
+async def validate_api_token(hass: HomeAssistant, api_token: str) -> tuple[bool, str]:
+    """Validate the API token by making a test request.
+    
+    Returns a tuple of (is_valid, error_message).
+    If is_valid is True, error_message will be an empty string.
+    """
     session = async_get_clientsession(hass)
     headers = {"Authorization": f"Bearer {api_token}"}
     
     try:
         async with session.get(
-            f"{API_BASE_URL}/pricing/", headers=headers, timeout=10
+            f"{API_BASE_URL}/pricing/?limit=1", headers=headers, timeout=10
         ) as response:
-            return response.status == 200
-    except (aiohttp.ClientError, asyncio.TimeoutError):
-        return False
+            if response.status == 200:
+                return True, ""
+            elif response.status == 401 or response.status == 403:
+                return False, "invalid_auth"
+            else:
+                _LOGGER.error("Unexpected response from API: %s", response.status)
+                return False, "cannot_connect"
+    except asyncio.TimeoutError:
+        _LOGGER.error("Timeout when connecting to Pstryk API")
+        return False, "timeout_error"
+    except aiohttp.ClientError as err:
+        _LOGGER.error("Client error when connecting to Pstryk API: %s", err)
+        return False, "cannot_connect"
+    except Exception as err:  # pylint: disable=broad-except
+        _LOGGER.exception("Unexpected error when validating Pstryk API token: %s", err)
+        return False, "unknown"
 
 
 class PstrykConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -49,7 +67,12 @@ class PstrykConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
 
         if user_input is not None:
-            valid = await validate_api_token(
+            # Check if integration with same name already exists
+            await self.async_set_unique_id(user_input[CONF_NAME])
+            self._abort_if_unique_id_configured()
+            
+            # Validate API token
+            valid, error = await validate_api_token(
                 self.hass, user_input[CONF_API_TOKEN]
             )
 
@@ -58,7 +81,10 @@ class PstrykConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     title=user_input[CONF_NAME], data=user_input
                 )
             else:
-                errors["base"] = "invalid_auth"
+                errors["base"] = error
+                _LOGGER.warning(
+                    "Failed to connect to Pstryk API with provided token. Error: %s", error
+                )
 
         return self.async_show_form(
             step_id="user", data_schema=DATA_SCHEMA, errors=errors
