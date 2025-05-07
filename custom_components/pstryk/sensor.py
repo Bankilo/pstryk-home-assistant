@@ -115,12 +115,16 @@ class PstrykBuyPriceSensor(PstrykBaseSensor):
                 if price_local.date() == now.date():
                     today_prices.append({
                         "hour": price_local.hour,
-                        "price": price
+                        "price": price,
+                        "is_cheap": price_data.get("is_cheap", False),
+                        "is_expensive": price_data.get("is_expensive", False)
                     })
                 elif price_local.date() == (now.date() + timedelta(days=1)):
                     tomorrow_prices.append({
                         "hour": price_local.hour,
-                        "price": price
+                        "price": price,
+                        "is_cheap": price_data.get("is_cheap", False),
+                        "is_expensive": price_data.get("is_expensive", False)
                     })
                     
                 # Check if price is for next hour
@@ -135,6 +139,12 @@ class PstrykBuyPriceSensor(PstrykBaseSensor):
                 attributes["prices_tomorrow"] = sorted(tomorrow_prices, key=lambda x: x["hour"])
             if next_hour_price is not None:
                 attributes["next_hour_price"] = next_hour_price
+            
+            # Add current hour flags
+            if data.get("is_cheap") is not None:
+                attributes["is_cheap"] = data.get("is_cheap", False)
+            if data.get("is_expensive") is not None:
+                attributes["is_expensive"] = data.get("is_expensive", False)
                 
             return attributes
         except Exception as error:
@@ -197,12 +207,16 @@ class PstrykSellPriceSensor(PstrykBaseSensor):
                 if price_local.date() == now.date():
                     today_prices.append({
                         "hour": price_local.hour,
-                        "price": price
+                        "price": price,
+                        "is_cheap": price_data.get("is_cheap", False),
+                        "is_expensive": price_data.get("is_expensive", False)
                     })
                 elif price_local.date() == (now.date() + timedelta(days=1)):
                     tomorrow_prices.append({
                         "hour": price_local.hour,
-                        "price": price
+                        "price": price,
+                        "is_cheap": price_data.get("is_cheap", False),
+                        "is_expensive": price_data.get("is_expensive", False)
                     })
                     
                 # Check if price is for next hour
@@ -217,6 +231,12 @@ class PstrykSellPriceSensor(PstrykBaseSensor):
                 attributes["prices_tomorrow"] = sorted(tomorrow_prices, key=lambda x: x["hour"])
             if next_hour_price is not None:
                 attributes["next_hour_price"] = next_hour_price
+            
+            # Add current hour flags
+            if data.get("is_cheap") is not None:
+                attributes["is_cheap"] = data.get("is_cheap", False)
+            if data.get("is_expensive") is not None:
+                attributes["is_expensive"] = data.get("is_expensive", False)
                 
             return attributes
         except Exception as error:

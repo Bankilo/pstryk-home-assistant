@@ -101,6 +101,8 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
         now_utc = dt_util.utcnow()
         prices = []
         current_price = None
+        is_cheap = False
+        is_expensive = False
         
         for frame in frames:
             val = convert_price(frame.get("price_gross"))
@@ -118,19 +120,29 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
             local_start = dt_util.as_local(start)
             timestamp = local_start.isoformat()
             
+            # Get is_cheap and is_expensive flags
+            frame_is_cheap = frame.get("is_cheap", False)
+            frame_is_expensive = frame.get("is_expensive", False)
+            
             prices.append({
                 "timestamp": timestamp,
                 "hour": local_start.hour,
-                "price": val
+                "price": val,
+                "is_cheap": frame_is_cheap,
+                "is_expensive": frame_is_expensive
             })
             
             if start <= now_utc < end:
                 current_price = val
+                is_cheap = frame_is_cheap
+                is_expensive = frame_is_expensive
         
         # Sort prices by timestamp
         prices = sorted(prices, key=lambda x: x["timestamp"])
         
         return {
             "prices": prices,
-            "current_price": current_price
+            "current_price": current_price,
+            "is_cheap": is_cheap,
+            "is_expensive": is_expensive
         }

@@ -10,7 +10,9 @@ This is a Home Assistant custom component that integrates with Pstryk.pl API to 
 - Real-time electricity selling prices (for prosumers)
 - Today's hourly price breakdown
 - Tomorrow's hourly price breakdown (when available)
-- Next hour price prediction
+- Next hour price
+- Detection of cheap and expensive hours
+- Binary sensors for cheap/expensive hour status
 
 ## Installation
 
@@ -56,14 +58,19 @@ The integration creates the following sensors:
 
 - `sensor.pstryk_buy_price`: Current electricity buying price
 - `sensor.pstryk_sell_price`: Current electricity selling price
+- `binary_sensor.pstryk_buy_cheap_hour`: Indicates if current hour is flagged as cheap for buying
+- `binary_sensor.pstryk_buy_expensive_hour`: Indicates if current hour is flagged as expensive for buying
+- `binary_sensor.pstryk_sell_cheap_hour`: Indicates if current hour is flagged as cheap for selling
+- `binary_sensor.pstryk_sell_expensive_hour`: Indicates if current hour is flagged as expensive for selling
 
-Each sensor includes additional attributes with hourly price breakdowns.
+Each sensor includes additional attributes with hourly price breakdowns, and the binary sensors include lists of upcoming cheap or expensive hours.
 
 ## Usage in Automations
 
 You can use these sensors in automations to optimize energy usage based on current prices:
 
 ```yaml
+# Example 1: Turn on appliance during low price (numeric threshold)
 automation:
   - alias: "Turn on appliance during low price"
     trigger:
@@ -77,6 +84,30 @@ automation:
       - service: switch.turn_on
         target:
           entity_id: switch.washing_machine
+
+# Example 2: Turn on appliance during cheap hour flag
+automation:
+  - alias: "Turn on appliance during cheap hour"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.pstryk_buy_cheap_hour
+        to: "on"
+    action:
+      - service: switch.turn_on
+        target:
+          entity_id: switch.washing_machine
+
+# Example 3: Turn off high-consumption devices during expensive hours
+automation:
+  - alias: "Turn off devices during expensive hour"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.pstryk_buy_expensive_hour
+        to: "on"
+    action:
+      - service: switch.turn_off
+        target:
+          entity_id: switch.high_consumption_device
 ```
 
 ## Troubleshooting
