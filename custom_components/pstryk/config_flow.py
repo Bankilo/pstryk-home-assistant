@@ -31,7 +31,7 @@ async def validate_api_token(hass: HomeAssistant, api_token: str) -> tuple[bool,
     If is_valid is True, error_message will be an empty string.
     """
     session = async_get_clientsession(hass)
-    headers = {"Authorization": f"Bearer {api_token}"}
+    headers = {"Authorization": f"{api_token}"}
     
     try:
         async with session.get(

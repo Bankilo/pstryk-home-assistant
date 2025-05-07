@@ -31,7 +31,7 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
         """Initialize."""
         self._session = session
         self._api_token = entry.data[CONF_API_TOKEN]
-        self._headers = {"Authorization": f"Bearer {self._api_token}"}
+        self._headers = {"Authorization": f"{self._api_token}"}
 
         super().__init__(
             hass,
