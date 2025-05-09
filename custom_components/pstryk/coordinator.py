@@ -53,9 +53,27 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self) -> dict[str, Any]:
         """Update data via API."""
         try:
-            buy_data = await self._fetch_pricing_data("buy")
-            sell_data = await self._fetch_pricing_data("sell")
-            
+            # Always fetch current data
+            buy_data = await self._fetch_pricing_data("buy", force_future=False)
+            sell_data = await self._fetch_pricing_data("sell", force_future=False)
+
+            # Also fetch next day data if it's available (after 14:00 UTC)
+            now_utc = dt_util.utcnow()
+            is_future_data_time = now_utc.hour >= 14  # Next day data available after 14:00 UTC
+
+            if is_future_data_time:
+                future_buy_data = await self._fetch_pricing_data("buy", force_future=True)
+                future_sell_data = await self._fetch_pricing_data("sell", force_future=True)
+
+                # Merge future data with current data
+                if future_buy_data.get("prices") and buy_data.get("prices"):
+                    buy_data["prices"].extend(future_buy_data.get("prices", []))
+                    buy_data["has_future_data"] = True
+
+                if future_sell_data.get("prices") and sell_data.get("prices"):
+                    sell_data["prices"].extend(future_sell_data.get("prices", []))
+                    sell_data["has_future_data"] = True
+
             return {
                 "buy": buy_data,
                 "sell": sell_data,
@@ -63,11 +81,24 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
         except (aiohttp.ClientError, asyncio.TimeoutError) as error:
             raise UpdateFailed(f"Error communicating with API: {error}") from error
 
-    async def _fetch_pricing_data(self, price_type: str) -> dict[str, Any]:
-        """Fetch pricing data from the API."""
+    async def _fetch_pricing_data(self, price_type: str, force_future: bool = False) -> dict[str, Any]:
+        """Fetch pricing data from the API.
+
+        If force_future is True, attempts to fetch future data for the next day.
+        Future pricing data is typically available after 14:00 UTC.
+        """
         today_local = dt_util.now().replace(hour=0, minute=0, second=0, microsecond=0)
         window_end_local = today_local + timedelta(days=2)
-        start_utc = dt_util.as_utc(today_local).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        # If we're forcing future data (after 14:00 UTC), try to get data for tomorrow
+        if force_future:
+            _LOGGER.debug("Attempting to fetch future pricing data for %s", price_type)
+            tomorrow_local = today_local + timedelta(days=1)
+            window_end_local = tomorrow_local + timedelta(days=1)
+            start_utc = dt_util.as_utc(tomorrow_local).strftime("%Y-%m-%dT%H:%M:%SZ")
+        else:
+            start_utc = dt_util.as_utc(today_local).strftime("%Y-%m-%dT%H:%M:%SZ")
+
         end_utc = dt_util.as_utc(window_end_local).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         endpoint_tpl = BUY_ENDPOINT if price_type == "buy" else SELL_ENDPOINT
@@ -103,6 +134,7 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
         current_price = None
         is_cheap = False
         is_expensive = False
+        has_future_data = False
         
         for frame in frames:
             val = convert_price(frame.get("price_gross"))
@@ -136,6 +168,10 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
                 current_price = val
                 is_cheap = frame_is_cheap
                 is_expensive = frame_is_expensive
+                
+            # Check if we have data for future days
+            if local_start.date() > dt_util.now().date():
+                has_future_data = True
         
         # Sort prices by timestamp
         prices = sorted(prices, key=lambda x: x["timestamp"])
@@ -144,5 +180,6 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
             "prices": prices,
             "current_price": current_price,
             "is_cheap": is_cheap,
-            "is_expensive": is_expensive
+            "is_expensive": is_expensive,
+            "has_future_data": has_future_data
         }

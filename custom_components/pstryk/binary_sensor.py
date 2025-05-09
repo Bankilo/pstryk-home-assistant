@@ -62,6 +62,9 @@ class PstrykBuyCheapHourBinarySensor(PstrykBaseBinarySensor):
     _attr_unique_id = "pstryk_buy_cheap_hour"
     _attr_icon = "mdi:currency-usd-off"
     _attr_device_class = BinarySensorDeviceClass.POWER
+    
+    # Binary sensors naturally return True/False values
+    # We just need to ensure the is_on property returns a boolean value
 
     @property
     def is_on(self) -> Optional[bool]:
@@ -81,22 +84,26 @@ class PstrykBuyCheapHourBinarySensor(PstrykBaseBinarySensor):
         """Return additional attributes."""
         if not self.coordinator.data or "buy" not in self.coordinator.data:
             return {}
-            
+
         try:
             data = self.coordinator.data["buy"]
             prices = data.get("prices", [])
-            
+
             # Find upcoming cheap hours
             cheap_hours = []
             for price_data in prices:
                 if price_data.get("is_cheap", False):
-                    cheap_hours.append({
-                        "timestamp": price_data["timestamp"],
-                        "hour": price_data["hour"],
-                        "price": price_data["price"]
-                    })
-            
-            return {"cheap_hours": cheap_hours[:24]}  # Limit to next 24 hours
+                    price_datetime = dt_util.parse_datetime(price_data["timestamp"])
+                    if price_datetime and price_datetime >= dt_util.now():
+                        cheap_hours.append({
+                            "timestamp": price_data["timestamp"],
+                            "hour": price_data["hour"],
+                            "price": price_data["price"],
+                            "date": dt_util.as_local(price_datetime).date().isoformat()
+                        })
+
+            # Sort by timestamp and include all future cheap hours
+            return {"cheap_hours": sorted(cheap_hours, key=lambda x: x["timestamp"])}
         except Exception as error:
             _LOGGER.error("Error extracting buy cheap attributes: %s", error)
             return {}
@@ -109,6 +116,9 @@ class PstrykBuyExpensiveHourBinarySensor(PstrykBaseBinarySensor):
     _attr_unique_id = "pstryk_buy_expensive_hour"
     _attr_icon = "mdi:currency-usd"
     _attr_device_class = BinarySensorDeviceClass.POWER
+    
+    # Binary sensors naturally return True/False values
+    # We just need to ensure the is_on property returns a boolean value
 
     @property
     def is_on(self) -> Optional[bool]:
@@ -128,22 +138,26 @@ class PstrykBuyExpensiveHourBinarySensor(PstrykBaseBinarySensor):
         """Return additional attributes."""
         if not self.coordinator.data or "buy" not in self.coordinator.data:
             return {}
-            
+
         try:
             data = self.coordinator.data["buy"]
             prices = data.get("prices", [])
-            
+
             # Find upcoming expensive hours
             expensive_hours = []
             for price_data in prices:
                 if price_data.get("is_expensive", False):
-                    expensive_hours.append({
-                        "timestamp": price_data["timestamp"],
-                        "hour": price_data["hour"],
-                        "price": price_data["price"]
-                    })
-            
-            return {"expensive_hours": expensive_hours[:24]}  # Limit to next 24 hours
+                    price_datetime = dt_util.parse_datetime(price_data["timestamp"])
+                    if price_datetime and price_datetime >= dt_util.now():
+                        expensive_hours.append({
+                            "timestamp": price_data["timestamp"],
+                            "hour": price_data["hour"],
+                            "price": price_data["price"],
+                            "date": dt_util.as_local(price_datetime).date().isoformat()
+                        })
+
+            # Sort by timestamp and include all future expensive hours
+            return {"expensive_hours": sorted(expensive_hours, key=lambda x: x["timestamp"])}
         except Exception as error:
             _LOGGER.error("Error extracting buy expensive attributes: %s", error)
             return {}
@@ -156,6 +170,9 @@ class PstrykSellCheapHourBinarySensor(PstrykBaseBinarySensor):
     _attr_unique_id = "pstryk_sell_cheap_hour"
     _attr_icon = "mdi:currency-usd-off"
     _attr_device_class = BinarySensorDeviceClass.POWER
+    
+    # Binary sensors naturally return True/False values
+    # We just need to ensure the is_on property returns a boolean value
 
     @property
     def is_on(self) -> Optional[bool]:
@@ -175,22 +192,26 @@ class PstrykSellCheapHourBinarySensor(PstrykBaseBinarySensor):
         """Return additional attributes."""
         if not self.coordinator.data or "sell" not in self.coordinator.data:
             return {}
-            
+
         try:
             data = self.coordinator.data["sell"]
             prices = data.get("prices", [])
-            
+
             # Find upcoming cheap hours
             cheap_hours = []
             for price_data in prices:
                 if price_data.get("is_cheap", False):
-                    cheap_hours.append({
-                        "timestamp": price_data["timestamp"],
-                        "hour": price_data["hour"],
-                        "price": price_data["price"]
-                    })
-            
-            return {"cheap_hours": cheap_hours[:24]}  # Limit to next 24 hours
+                    price_datetime = dt_util.parse_datetime(price_data["timestamp"])
+                    if price_datetime and price_datetime >= dt_util.now():
+                        cheap_hours.append({
+                            "timestamp": price_data["timestamp"],
+                            "hour": price_data["hour"],
+                            "price": price_data["price"],
+                            "date": dt_util.as_local(price_datetime).date().isoformat()
+                        })
+
+            # Sort by timestamp and include all future cheap hours
+            return {"cheap_hours": sorted(cheap_hours, key=lambda x: x["timestamp"])}
         except Exception as error:
             _LOGGER.error("Error extracting sell cheap attributes: %s", error)
             return {}
@@ -203,6 +224,9 @@ class PstrykSellExpensiveHourBinarySensor(PstrykBaseBinarySensor):
     _attr_unique_id = "pstryk_sell_expensive_hour"
     _attr_icon = "mdi:currency-usd"
     _attr_device_class = BinarySensorDeviceClass.POWER
+    
+    # Binary sensors naturally return True/False values
+    # We just need to ensure the is_on property returns a boolean value
 
     @property
     def is_on(self) -> Optional[bool]:
@@ -222,22 +246,26 @@ class PstrykSellExpensiveHourBinarySensor(PstrykBaseBinarySensor):
         """Return additional attributes."""
         if not self.coordinator.data or "sell" not in self.coordinator.data:
             return {}
-            
+
         try:
             data = self.coordinator.data["sell"]
             prices = data.get("prices", [])
-            
+
             # Find upcoming expensive hours
             expensive_hours = []
             for price_data in prices:
                 if price_data.get("is_expensive", False):
-                    expensive_hours.append({
-                        "timestamp": price_data["timestamp"],
-                        "hour": price_data["hour"],
-                        "price": price_data["price"]
-                    })
-            
-            return {"expensive_hours": expensive_hours[:24]}  # Limit to next 24 hours
+                    price_datetime = dt_util.parse_datetime(price_data["timestamp"])
+                    if price_datetime and price_datetime >= dt_util.now():
+                        expensive_hours.append({
+                            "timestamp": price_data["timestamp"],
+                            "hour": price_data["hour"],
+                            "price": price_data["price"],
+                            "date": dt_util.as_local(price_datetime).date().isoformat()
+                        })
+
+            # Sort by timestamp and include all future expensive hours
+            return {"expensive_hours": sorted(expensive_hours, key=lambda x: x["timestamp"])}
         except Exception as error:
             _LOGGER.error("Error extracting sell expensive attributes: %s", error)
             return {}
