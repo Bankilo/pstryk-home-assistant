@@ -19,6 +19,5 @@ ATTR_IS_EXPENSIVE = "is_expensive"
 ATTR_CHEAP_HOURS = "cheap_hours"
 ATTR_EXPENSIVE_HOURS = "expensive_hours"
 ATTR_PRICES_FUTURE = "prices_future"
-ATTR_ALL_PRICES = "all_prices"
 
 COORDINATOR = "coordinator"

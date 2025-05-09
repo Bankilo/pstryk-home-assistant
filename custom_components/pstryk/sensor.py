@@ -142,9 +142,6 @@ class PstrykBuyPriceSensor(PstrykBaseSensor):
             if next_hour_price is not None:
                 attributes["next_hour_price"] = next_hour_price
             
-            # Add all prices for charting/visualization
-            all_prices = sorted(today_prices + tomorrow_prices + future_prices, key=lambda x: x["timestamp"])
-            attributes["all_prices"] = all_prices
             
             # Add current hour flags
             if data.get("is_cheap") is not None:
@@ -240,9 +237,6 @@ class PstrykSellPriceSensor(PstrykBaseSensor):
             if next_hour_price is not None:
                 attributes["next_hour_price"] = next_hour_price
             
-            # Add all prices for charting/visualization
-            all_prices = sorted(today_prices + tomorrow_prices + future_prices, key=lambda x: x["timestamp"])
-            attributes["all_prices"] = all_prices
             
             # Add current hour flags
             if data.get("is_cheap") is not None:
