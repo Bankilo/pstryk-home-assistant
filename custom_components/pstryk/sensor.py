@@ -16,7 +16,19 @@ from homeassistant.helpers.update_coordinator import (
 )
 from homeassistant.util import dt as dt_util
 
-from .const import COORDINATOR, DOMAIN
+from .const import (
+    ATTR_CHEAP_HOURS,
+    ATTR_CURRENT_PRICE,
+    ATTR_EXPENSIVE_HOURS,
+    ATTR_IS_CHEAP,
+    ATTR_IS_EXPENSIVE,
+    ATTR_NEXT_HOUR_PRICE,
+    ATTR_PRICES_FUTURE,
+    ATTR_PRICES_TODAY,
+    ATTR_PRICES_TOMORROW,
+    COORDINATOR,
+    DOMAIN,
+)
 from .coordinator import PstrykDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -65,194 +77,124 @@ class PstrykBaseSensor(CoordinatorEntity, SensorEntity):
         }
 
 
-class PstrykBuyPriceSensor(PstrykBaseSensor):
+# -----------------------------------------------------------------------------
+# Generic hourly price sensor
+# -----------------------------------------------------------------------------
+
+
+class _PstrykPriceSensor(PstrykBaseSensor):
+    """Shared implementation for buy/sell price sensors."""
+
+    # Must be set by subclass ("buy" | "sell")
+    _price_key: str = "buy"
+
+    # Subclass may override icon/name/unique_id as usual
+
+    # -------------------- Helpers --------------------
+    def _price_branch(self) -> Optional[dict]:
+        """Return the nested dict for the configured price type."""
+        if not self.coordinator.data or self._price_key not in self.coordinator.data:
+            return None
+        return self.coordinator.data[self._price_key]
+
+    # -------------------- Home Assistant properties --------------------
+    @property
+    def native_value(self) -> Optional[float]:
+        """Current price for the ongoing hour."""
+        branch = self._price_branch()
+        if branch is None:
+            return None
+        value = branch.get("current_price")
+        # Ensure HA receives a float (Decimal would work too but float is the
+        # de-facto standard for sensors).
+        return float(value) if value is not None else None
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Organise price frames into today / tomorrow / future buckets and
+        expose helper attributes shared by both buy & sell sensors."""
+
+        branch = self._price_branch()
+        if branch is None:
+            return {}
+
+        try:
+            now = dt_util.now()
+            prices = branch.get("prices", [])
+
+            today_prices: list[dict] = []
+            tomorrow_prices: list[dict] = []
+            future_prices: list[dict] = []
+            next_hour_price: Optional[float] = None
+
+            next_hour_start = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+
+            for p in prices:
+                ts_str = p.get("timestamp")
+                if not ts_str:
+                    continue
+
+                p_dt = dt_util.parse_datetime(ts_str)
+                if p_dt is None:
+                    continue
+
+                p_local = dt_util.as_local(p_dt)
+                frame = {
+                    "hour": p_local.hour,
+                    "price": p.get("price"),
+                    "timestamp": ts_str,
+                    ATTR_IS_CHEAP: p.get(ATTR_IS_CHEAP, False),
+                    ATTR_IS_EXPENSIVE: p.get(ATTR_IS_EXPENSIVE, False),
+                }
+
+                if p_local.date() == now.date():
+                    today_prices.append(frame)
+                elif p_local.date() == (now.date() + timedelta(days=1)):
+                    tomorrow_prices.append(frame)
+                elif p_local.date() > (now.date() + timedelta(days=1)):
+                    future_prices.append(frame)
+
+                # Determine next-hour price (exact match on timestamp)
+                if p_local == next_hour_start:
+                    next_hour_price = p.get("price")
+
+            attrs: Dict[str, Any] = {}
+            if today_prices:
+                attrs[ATTR_PRICES_TODAY] = sorted(today_prices, key=lambda x: x["hour"])
+            if tomorrow_prices:
+                attrs[ATTR_PRICES_TOMORROW] = sorted(tomorrow_prices, key=lambda x: x["hour"])
+            if future_prices:
+                attrs[ATTR_PRICES_FUTURE] = sorted(future_prices, key=lambda x: x["timestamp"])
+            if next_hour_price is not None:
+                attrs[ATTR_NEXT_HOUR_PRICE] = next_hour_price
+
+            # Flags for the current hour
+            if branch.get(ATTR_IS_CHEAP) is not None:
+                attrs[ATTR_IS_CHEAP] = branch.get(ATTR_IS_CHEAP, False)
+            if branch.get(ATTR_IS_EXPENSIVE) is not None:
+                attrs[ATTR_IS_EXPENSIVE] = branch.get(ATTR_IS_EXPENSIVE, False)
+
+            return attrs
+        except Exception as err:  # pylint: disable=broad-except
+            _LOGGER.error("Error extracting %s price attributes: %s", self._price_key, err)
+            return {}
+
+class PstrykBuyPriceSensor(_PstrykPriceSensor):
     """Sensor for Pstryk buy prices."""
 
     _attr_name = "Pstryk Buy Price"
     _attr_unique_id = "pstryk_buy_price"
     _attr_icon = "mdi:flash"
-
-    @property
-    def native_value(self) -> Optional[float]:
-        """Return the current price."""
-        if not self.coordinator.data or "buy" not in self.coordinator.data:
-            return None
-            
-        try:
-            data = self.coordinator.data["buy"]
-            return data.get("current_price")
-        except Exception as error:
-            _LOGGER.error("Error retrieving buy price: %s", error)
-            return None
-
-    @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
-        """Return additional attributes."""
-        if not self.coordinator.data or "buy" not in self.coordinator.data:
-            return {}
-            
-        try:
-            now = dt_util.now()
-            data = self.coordinator.data["buy"]
-            prices = data.get("prices", [])
-            
-            # Group prices by date
-            today_prices = []
-            tomorrow_prices = []
-            future_prices = []  # Prices for days beyond tomorrow
-            next_hour_price = None
-            
-            for price_data in prices:
-                timestamp = price_data.get("timestamp")
-                if not timestamp:
-                    continue
-                    
-                price_datetime = dt_util.parse_datetime(timestamp)
-                if not price_datetime:
-                    continue
-                    
-                price = price_data.get("price")
-                if price is None:
-                    continue
-                    
-                price_local = dt_util.as_local(price_datetime)
-                price_info = {
-                    "hour": price_local.hour,
-                    "price": price,
-                    "timestamp": timestamp,
-                    "is_cheap": price_data.get("is_cheap", False),
-                    "is_expensive": price_data.get("is_expensive", False)
-                }
-                
-                # Check if price is for today, tomorrow, or beyond
-                if price_local.date() == now.date():
-                    today_prices.append(price_info)
-                elif price_local.date() == (now.date() + timedelta(days=1)):
-                    tomorrow_prices.append(price_info)
-                elif price_local.date() > (now.date() + timedelta(days=1)):
-                    future_prices.append(price_info)
-                    
-                # Check if price is for next hour
-                next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
-                if price_local.hour == next_hour.hour and price_local.date() == next_hour.date():
-                    next_hour_price = price
-            
-            attributes = {}
-            if today_prices:
-                attributes["prices_today"] = sorted(today_prices, key=lambda x: x["hour"])
-            if tomorrow_prices:
-                attributes["prices_tomorrow"] = sorted(tomorrow_prices, key=lambda x: x["hour"])
-            if future_prices:
-                attributes["prices_future"] = sorted(future_prices, key=lambda x: x["timestamp"])
-            if next_hour_price is not None:
-                attributes["next_hour_price"] = next_hour_price
-            
-            
-            # Add current hour flags
-            if data.get("is_cheap") is not None:
-                attributes["is_cheap"] = data.get("is_cheap", False)
-            if data.get("is_expensive") is not None:
-                attributes["is_expensive"] = data.get("is_expensive", False)
-                
-            return attributes
-        except Exception as error:
-            _LOGGER.error("Error extracting buy price attributes: %s", error)
-            return {}
+    _price_key = "buy"
 
 
-class PstrykSellPriceSensor(PstrykBaseSensor):
+class PstrykSellPriceSensor(_PstrykPriceSensor):
     """Sensor for Pstryk sell prices."""
 
     _attr_name = "Pstryk Sell Price"
     _attr_unique_id = "pstryk_sell_price"
     _attr_icon = "mdi:flash-outline"
-
-    @property
-    def native_value(self) -> Optional[float]:
-        """Return the current price."""
-        if not self.coordinator.data or "sell" not in self.coordinator.data:
-            return None
-            
-        try:
-            data = self.coordinator.data["sell"]
-            return data.get("current_price")
-        except Exception as error:
-            _LOGGER.error("Error retrieving sell price: %s", error)
-            return None
-
-    @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
-        """Return additional attributes."""
-        if not self.coordinator.data or "sell" not in self.coordinator.data:
-            return {}
-            
-        try:
-            now = dt_util.now()
-            data = self.coordinator.data["sell"]
-            prices = data.get("prices", [])
-            
-            # Group prices by date
-            today_prices = []
-            tomorrow_prices = []
-            future_prices = []  # Prices for days beyond tomorrow
-            next_hour_price = None
-            
-            for price_data in prices:
-                timestamp = price_data.get("timestamp")
-                if not timestamp:
-                    continue
-                    
-                price_datetime = dt_util.parse_datetime(timestamp)
-                if not price_datetime:
-                    continue
-                    
-                price = price_data.get("price")
-                if price is None:
-                    continue
-                    
-                price_local = dt_util.as_local(price_datetime)
-                price_info = {
-                    "hour": price_local.hour,
-                    "price": price,
-                    "timestamp": timestamp,
-                    "is_cheap": price_data.get("is_cheap", False),
-                    "is_expensive": price_data.get("is_expensive", False)
-                }
-                
-                # Check if price is for today, tomorrow, or beyond
-                if price_local.date() == now.date():
-                    today_prices.append(price_info)
-                elif price_local.date() == (now.date() + timedelta(days=1)):
-                    tomorrow_prices.append(price_info)
-                elif price_local.date() > (now.date() + timedelta(days=1)):
-                    future_prices.append(price_info)
-                    
-                # Check if price is for next hour
-                next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
-                if price_local.hour == next_hour.hour and price_local.date() == next_hour.date():
-                    next_hour_price = price
-            
-            attributes = {}
-            if today_prices:
-                attributes["prices_today"] = sorted(today_prices, key=lambda x: x["hour"])
-            if tomorrow_prices:
-                attributes["prices_tomorrow"] = sorted(tomorrow_prices, key=lambda x: x["hour"])
-            if future_prices:
-                attributes["prices_future"] = sorted(future_prices, key=lambda x: x["timestamp"])
-            if next_hour_price is not None:
-                attributes["next_hour_price"] = next_hour_price
-            
-            
-            # Add current hour flags
-            if data.get("is_cheap") is not None:
-                attributes["is_cheap"] = data.get("is_cheap", False)
-            if data.get("is_expensive") is not None:
-                attributes["is_expensive"] = data.get("is_expensive", False)
-                
-            return attributes
-        except Exception as error:
-            _LOGGER.error("Error extracting sell price attributes: %s", error)
-            return {}
+    _price_key = "sell"
 
 
 # -----------------------------------------------------------------------------

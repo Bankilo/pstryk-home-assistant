@@ -1,5 +1,7 @@
 """Config flow for Pstryk.pl integration."""
+
 import asyncio
+import hashlib
 import logging
 from datetime import timedelta
 from typing import Any
@@ -87,8 +89,11 @@ class PstrykConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
 
         if user_input is not None:
-            # Check if integration with same name already exists
-            await self.async_set_unique_id(user_input[CONF_NAME])
+            # Use a stable hash of the API token as unique_id so the same
+            # account cannot be configured twice, regardless of the chosen
+            # friendly name.
+            unique = hashlib.sha256(user_input[CONF_API_TOKEN].encode()).hexdigest()
+            await self.async_set_unique_id(unique)
             self._abort_if_unique_id_configured()
             
             # Validate API token

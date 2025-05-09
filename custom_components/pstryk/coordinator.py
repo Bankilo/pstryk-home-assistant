@@ -1,7 +1,8 @@
 """Data update coordinator for the Pstryk.pl integration."""
 import asyncio
-from datetime import datetime, timedelta, timezone
 import logging
+from datetime import timedelta
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 
 import aiohttp
@@ -18,17 +19,24 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     SELL_ENDPOINT,
+    ATTR_IS_CHEAP,
+    ATTR_IS_EXPENSIVE,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def convert_price(value):
-    """Convert price string to float."""
+def _to_float_precise(value: str | float | int | Decimal, ndigits: int = 3) -> float:
+    """Convert the incoming price string/number to float with Decimal for
+    precise rounding.
+    """
     try:
-        return round(float(str(value).replace(",", ".").strip()), 2)
-    except (ValueError, TypeError) as e:
-        _LOGGER.warning("Price conversion error: %s", e)
+        dec = Decimal(str(value).replace(",", ".").strip())
+        quant = Decimal("1e-{0}".format(ndigits))
+        dec = dec.quantize(quant, rounding=ROUND_HALF_UP)
+        return float(dec)
+    except (InvalidOperation, ValueError, TypeError) as err:
+        _LOGGER.warning("Price conversion error: %s", err)
         return None
 
 
@@ -137,7 +145,7 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
         has_future_data = False
         
         for frame in frames:
-            val = convert_price(frame.get("price_gross"))
+            val = _to_float_precise(frame.get("price_gross"))
             if val is None:
                 continue
                 
@@ -153,15 +161,15 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
             timestamp = local_start.isoformat()
             
             # Get is_cheap and is_expensive flags
-            frame_is_cheap = frame.get("is_cheap", False)
-            frame_is_expensive = frame.get("is_expensive", False)
+            frame_is_cheap = frame.get(ATTR_IS_CHEAP, False)
+            frame_is_expensive = frame.get(ATTR_IS_EXPENSIVE, False)
             
             prices.append({
                 "timestamp": timestamp,
                 "hour": local_start.hour,
                 "price": val,
-                "is_cheap": frame_is_cheap,
-                "is_expensive": frame_is_expensive
+                ATTR_IS_CHEAP: frame_is_cheap,
+                ATTR_IS_EXPENSIVE: frame_is_expensive
             })
             
             if start <= now_utc < end:
@@ -179,7 +187,7 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
         return {
             "prices": prices,
             "current_price": current_price,
-            "is_cheap": is_cheap,
-            "is_expensive": is_expensive,
+            ATTR_IS_CHEAP: is_cheap,
+            ATTR_IS_EXPENSIVE: is_expensive,
             "has_future_data": has_future_data
         }

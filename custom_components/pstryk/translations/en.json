@@ -38,6 +38,12 @@
           "prices_tomorrow": "Tomorrow's prices",
           "next_hour_price": "Next hour price"
         }
+      },
+      "pstryk_buy_price_next_hour": {
+        "name": "Buying Price – Next Hour"
+      },
+      "pstryk_sell_price_next_hour": {
+        "name": "Selling Price – Next Hour"
       }
     }
   }

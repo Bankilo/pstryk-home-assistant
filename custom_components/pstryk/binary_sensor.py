@@ -13,7 +13,16 @@ from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
 )
 
-from .const import COORDINATOR, DOMAIN
+from homeassistant.util import dt as dt_util
+
+from .const import (
+    ATTR_CHEAP_HOURS,
+    ATTR_IS_CHEAP,
+    ATTR_IS_EXPENSIVE,
+    ATTR_EXPENSIVE_HOURS,
+    COORDINATOR,
+    DOMAIN,
+)
 from .coordinator import PstrykDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -74,7 +83,7 @@ class PstrykBuyCheapHourBinarySensor(PstrykBaseBinarySensor):
             
         try:
             data = self.coordinator.data["buy"]
-            return data.get("is_cheap", False)
+            return data.get(ATTR_IS_CHEAP, False)
         except Exception as error:
             _LOGGER.error("Error retrieving buy cheap flag: %s", error)
             return None
@@ -92,7 +101,7 @@ class PstrykBuyCheapHourBinarySensor(PstrykBaseBinarySensor):
             # Find upcoming cheap hours
             cheap_hours = []
             for price_data in prices:
-                if price_data.get("is_cheap", False):
+                if price_data.get(ATTR_IS_CHEAP, False):
                     price_datetime = dt_util.parse_datetime(price_data["timestamp"])
                     if price_datetime and price_datetime >= dt_util.now():
                         cheap_hours.append({
@@ -103,7 +112,7 @@ class PstrykBuyCheapHourBinarySensor(PstrykBaseBinarySensor):
                         })
 
             # Sort by timestamp and include all future cheap hours
-            return {"cheap_hours": sorted(cheap_hours, key=lambda x: x["timestamp"])}
+            return {ATTR_CHEAP_HOURS: sorted(cheap_hours, key=lambda x: x["timestamp"])}
         except Exception as error:
             _LOGGER.error("Error extracting buy cheap attributes: %s", error)
             return {}
@@ -128,7 +137,7 @@ class PstrykBuyExpensiveHourBinarySensor(PstrykBaseBinarySensor):
             
         try:
             data = self.coordinator.data["buy"]
-            return data.get("is_expensive", False)
+            return data.get(ATTR_IS_EXPENSIVE, False)
         except Exception as error:
             _LOGGER.error("Error retrieving buy expensive flag: %s", error)
             return None
@@ -146,7 +155,7 @@ class PstrykBuyExpensiveHourBinarySensor(PstrykBaseBinarySensor):
             # Find upcoming expensive hours
             expensive_hours = []
             for price_data in prices:
-                if price_data.get("is_expensive", False):
+                if price_data.get(ATTR_IS_EXPENSIVE, False):
                     price_datetime = dt_util.parse_datetime(price_data["timestamp"])
                     if price_datetime and price_datetime >= dt_util.now():
                         expensive_hours.append({
@@ -157,7 +166,7 @@ class PstrykBuyExpensiveHourBinarySensor(PstrykBaseBinarySensor):
                         })
 
             # Sort by timestamp and include all future expensive hours
-            return {"expensive_hours": sorted(expensive_hours, key=lambda x: x["timestamp"])}
+            return {ATTR_EXPENSIVE_HOURS: sorted(expensive_hours, key=lambda x: x["timestamp"])}
         except Exception as error:
             _LOGGER.error("Error extracting buy expensive attributes: %s", error)
             return {}
@@ -182,7 +191,7 @@ class PstrykSellCheapHourBinarySensor(PstrykBaseBinarySensor):
             
         try:
             data = self.coordinator.data["sell"]
-            return data.get("is_cheap", False)
+            return data.get(ATTR_IS_CHEAP, False)
         except Exception as error:
             _LOGGER.error("Error retrieving sell cheap flag: %s", error)
             return None
@@ -200,7 +209,7 @@ class PstrykSellCheapHourBinarySensor(PstrykBaseBinarySensor):
             # Find upcoming cheap hours
             cheap_hours = []
             for price_data in prices:
-                if price_data.get("is_cheap", False):
+                if price_data.get(ATTR_IS_CHEAP, False):
                     price_datetime = dt_util.parse_datetime(price_data["timestamp"])
                     if price_datetime and price_datetime >= dt_util.now():
                         cheap_hours.append({
@@ -211,7 +220,7 @@ class PstrykSellCheapHourBinarySensor(PstrykBaseBinarySensor):
                         })
 
             # Sort by timestamp and include all future cheap hours
-            return {"cheap_hours": sorted(cheap_hours, key=lambda x: x["timestamp"])}
+            return {ATTR_CHEAP_HOURS: sorted(cheap_hours, key=lambda x: x["timestamp"])}
         except Exception as error:
             _LOGGER.error("Error extracting sell cheap attributes: %s", error)
             return {}
@@ -236,7 +245,7 @@ class PstrykSellExpensiveHourBinarySensor(PstrykBaseBinarySensor):
             
         try:
             data = self.coordinator.data["sell"]
-            return data.get("is_expensive", False)
+            return data.get(ATTR_IS_EXPENSIVE, False)
         except Exception as error:
             _LOGGER.error("Error retrieving sell expensive flag: %s", error)
             return None
@@ -254,7 +263,7 @@ class PstrykSellExpensiveHourBinarySensor(PstrykBaseBinarySensor):
             # Find upcoming expensive hours
             expensive_hours = []
             for price_data in prices:
-                if price_data.get("is_expensive", False):
+                if price_data.get(ATTR_IS_EXPENSIVE, False):
                     price_datetime = dt_util.parse_datetime(price_data["timestamp"])
                     if price_datetime and price_datetime >= dt_util.now():
                         expensive_hours.append({
@@ -265,7 +274,7 @@ class PstrykSellExpensiveHourBinarySensor(PstrykBaseBinarySensor):
                         })
 
             # Sort by timestamp and include all future expensive hours
-            return {"expensive_hours": sorted(expensive_hours, key=lambda x: x["timestamp"])}
+            return {ATTR_EXPENSIVE_HOURS: sorted(expensive_hours, key=lambda x: x["timestamp"])}
         except Exception as error:
             _LOGGER.error("Error extracting sell expensive attributes: %s", error)
             return {}
