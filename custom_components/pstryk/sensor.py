@@ -32,10 +32,8 @@ async def async_setup_entry(
     entities = [
         PstrykBuyPriceSensor(coordinator),
         PstrykSellPriceSensor(coordinator),
-        PstrykBuyPriceChartSensor(coordinator),
-        PstrykSellPriceChartSensor(coordinator),
     ]
-
+    
     async_add_entities(entities)
 
 
@@ -96,6 +94,7 @@ class PstrykBuyPriceSensor(PstrykBaseSensor):
             # Group prices by date
             today_prices = []
             tomorrow_prices = []
+            future_prices = []  # Prices for days beyond tomorrow
             next_hour_price = None
             
             for price_data in prices:
@@ -112,22 +111,21 @@ class PstrykBuyPriceSensor(PstrykBaseSensor):
                     continue
                     
                 price_local = dt_util.as_local(price_datetime)
+                price_info = {
+                    "hour": price_local.hour,
+                    "price": price,
+                    "timestamp": timestamp,
+                    "is_cheap": price_data.get("is_cheap", False),
+                    "is_expensive": price_data.get("is_expensive", False)
+                }
                 
-                # Check if price is for today or tomorrow
+                # Check if price is for today, tomorrow, or beyond
                 if price_local.date() == now.date():
-                    today_prices.append({
-                        "hour": price_local.hour,
-                        "price": price,
-                        "is_cheap": price_data.get("is_cheap", False),
-                        "is_expensive": price_data.get("is_expensive", False)
-                    })
+                    today_prices.append(price_info)
                 elif price_local.date() == (now.date() + timedelta(days=1)):
-                    tomorrow_prices.append({
-                        "hour": price_local.hour,
-                        "price": price,
-                        "is_cheap": price_data.get("is_cheap", False),
-                        "is_expensive": price_data.get("is_expensive", False)
-                    })
+                    tomorrow_prices.append(price_info)
+                elif price_local.date() > (now.date() + timedelta(days=1)):
+                    future_prices.append(price_info)
                     
                 # Check if price is for next hour
                 next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
@@ -139,8 +137,14 @@ class PstrykBuyPriceSensor(PstrykBaseSensor):
                 attributes["prices_today"] = sorted(today_prices, key=lambda x: x["hour"])
             if tomorrow_prices:
                 attributes["prices_tomorrow"] = sorted(tomorrow_prices, key=lambda x: x["hour"])
+            if future_prices:
+                attributes["prices_future"] = sorted(future_prices, key=lambda x: x["timestamp"])
             if next_hour_price is not None:
                 attributes["next_hour_price"] = next_hour_price
+            
+            # Add all prices for charting/visualization
+            all_prices = sorted(today_prices + tomorrow_prices + future_prices, key=lambda x: x["timestamp"])
+            attributes["all_prices"] = all_prices
             
             # Add current hour flags
             if data.get("is_cheap") is not None:
@@ -166,7 +170,7 @@ class PstrykSellPriceSensor(PstrykBaseSensor):
         """Return the current price."""
         if not self.coordinator.data or "sell" not in self.coordinator.data:
             return None
-
+            
         try:
             data = self.coordinator.data["sell"]
             return data.get("current_price")
@@ -179,188 +183,74 @@ class PstrykSellPriceSensor(PstrykBaseSensor):
         """Return additional attributes."""
         if not self.coordinator.data or "sell" not in self.coordinator.data:
             return {}
-
+            
         try:
             now = dt_util.now()
             data = self.coordinator.data["sell"]
             prices = data.get("prices", [])
-
+            
             # Group prices by date
             today_prices = []
             tomorrow_prices = []
+            future_prices = []  # Prices for days beyond tomorrow
             next_hour_price = None
-
+            
             for price_data in prices:
                 timestamp = price_data.get("timestamp")
                 if not timestamp:
                     continue
-
+                    
                 price_datetime = dt_util.parse_datetime(timestamp)
                 if not price_datetime:
                     continue
-
+                    
                 price = price_data.get("price")
                 if price is None:
                     continue
-
+                    
                 price_local = dt_util.as_local(price_datetime)
-
-                # Check if price is for today or tomorrow
+                price_info = {
+                    "hour": price_local.hour,
+                    "price": price,
+                    "timestamp": timestamp,
+                    "is_cheap": price_data.get("is_cheap", False),
+                    "is_expensive": price_data.get("is_expensive", False)
+                }
+                
+                # Check if price is for today, tomorrow, or beyond
                 if price_local.date() == now.date():
-                    today_prices.append({
-                        "hour": price_local.hour,
-                        "price": price,
-                        "is_cheap": price_data.get("is_cheap", False),
-                        "is_expensive": price_data.get("is_expensive", False)
-                    })
+                    today_prices.append(price_info)
                 elif price_local.date() == (now.date() + timedelta(days=1)):
-                    tomorrow_prices.append({
-                        "hour": price_local.hour,
-                        "price": price,
-                        "is_cheap": price_data.get("is_cheap", False),
-                        "is_expensive": price_data.get("is_expensive", False)
-                    })
-
+                    tomorrow_prices.append(price_info)
+                elif price_local.date() > (now.date() + timedelta(days=1)):
+                    future_prices.append(price_info)
+                    
                 # Check if price is for next hour
                 next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
                 if price_local.hour == next_hour.hour and price_local.date() == next_hour.date():
                     next_hour_price = price
-
+            
             attributes = {}
             if today_prices:
                 attributes["prices_today"] = sorted(today_prices, key=lambda x: x["hour"])
             if tomorrow_prices:
                 attributes["prices_tomorrow"] = sorted(tomorrow_prices, key=lambda x: x["hour"])
+            if future_prices:
+                attributes["prices_future"] = sorted(future_prices, key=lambda x: x["timestamp"])
             if next_hour_price is not None:
                 attributes["next_hour_price"] = next_hour_price
-
+            
+            # Add all prices for charting/visualization
+            all_prices = sorted(today_prices + tomorrow_prices + future_prices, key=lambda x: x["timestamp"])
+            attributes["all_prices"] = all_prices
+            
             # Add current hour flags
             if data.get("is_cheap") is not None:
                 attributes["is_cheap"] = data.get("is_cheap", False)
             if data.get("is_expensive") is not None:
                 attributes["is_expensive"] = data.get("is_expensive", False)
-
+                
             return attributes
         except Exception as error:
             _LOGGER.error("Error extracting sell price attributes: %s", error)
-            return {}
-
-
-class PstrykBuyPriceChartSensor(PstrykBaseSensor):
-    """Sensor for Pstryk buy prices in chart format."""
-
-    _attr_name = "Pstryk Buy Price Chart"
-    _attr_unique_id = "pstryk_buy_price_chart"
-    _attr_icon = "mdi:chart-line"
-    _attr_state_class = None  # No state class for this sensor
-    _attr_native_unit_of_measurement = "PLN/kWh"
-
-    @property
-    def native_value(self) -> Optional[float]:
-        """Return the current price as the state."""
-        if not self.coordinator.data or "buy" not in self.coordinator.data:
-            return None
-
-        try:
-            data = self.coordinator.data["buy"]
-            return data.get("current_price")
-        except Exception as error:
-            _LOGGER.error("Error retrieving buy price for chart: %s", error)
-            return None
-
-    @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
-        """Return data formatted for charts."""
-        if not self.coordinator.data or "buy" not in self.coordinator.data:
-            return {}
-
-        try:
-            data = self.coordinator.data["buy"]
-            prices = data.get("prices", [])
-
-            chart_data = []
-            for price_data in prices:
-                timestamp = price_data.get("timestamp")
-                if not timestamp:
-                    continue
-
-                price = price_data.get("price")
-                if price is None:
-                    continue
-
-                # Format for Home Assistant charts
-                chart_data.append({
-                    "x": timestamp,  # ISO format timestamp
-                    "y": price,
-                    "is_cheap": price_data.get("is_cheap", False),
-                    "is_expensive": price_data.get("is_expensive", False)
-                })
-
-            return {
-                "chart_data": sorted(chart_data, key=lambda x: x["x"]),
-                "has_future_data": data.get("has_future_data", False),
-                "all_prices": sorted(prices, key=lambda x: x["timestamp"])
-            }
-        except Exception as error:
-            _LOGGER.error("Error preparing buy price chart data: %s", error)
-            return {}
-
-
-class PstrykSellPriceChartSensor(PstrykBaseSensor):
-    """Sensor for Pstryk sell prices in chart format."""
-
-    _attr_name = "Pstryk Sell Price Chart"
-    _attr_unique_id = "pstryk_sell_price_chart"
-    _attr_icon = "mdi:chart-line"
-    _attr_state_class = None  # No state class for this sensor
-    _attr_native_unit_of_measurement = "PLN/kWh"
-
-    @property
-    def native_value(self) -> Optional[float]:
-        """Return the current price as the state."""
-        if not self.coordinator.data or "sell" not in self.coordinator.data:
-            return None
-
-        try:
-            data = self.coordinator.data["sell"]
-            return data.get("current_price")
-        except Exception as error:
-            _LOGGER.error("Error retrieving sell price for chart: %s", error)
-            return None
-
-    @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
-        """Return data formatted for charts."""
-        if not self.coordinator.data or "sell" not in self.coordinator.data:
-            return {}
-
-        try:
-            data = self.coordinator.data["sell"]
-            prices = data.get("prices", [])
-
-            chart_data = []
-            for price_data in prices:
-                timestamp = price_data.get("timestamp")
-                if not timestamp:
-                    continue
-
-                price = price_data.get("price")
-                if price is None:
-                    continue
-
-                # Format for Home Assistant charts
-                chart_data.append({
-                    "x": timestamp,  # ISO format timestamp
-                    "y": price,
-                    "is_cheap": price_data.get("is_cheap", False),
-                    "is_expensive": price_data.get("is_expensive", False)
-                })
-
-            return {
-                "chart_data": sorted(chart_data, key=lambda x: x["x"]),
-                "has_future_data": data.get("has_future_data", False),
-                "all_prices": sorted(prices, key=lambda x: x["timestamp"])
-            }
-        except Exception as error:
-            _LOGGER.error("Error preparing sell price chart data: %s", error)
             return {}
