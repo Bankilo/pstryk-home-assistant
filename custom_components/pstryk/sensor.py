@@ -32,8 +32,13 @@ async def async_setup_entry(
     entities = [
         PstrykBuyPriceSensor(coordinator),
         PstrykSellPriceSensor(coordinator),
+        # "Next hour" price sensors expose the price for the upcoming hour
+        # as the main state. They rely on the same coordinator data and do not
+        # require any extra API calls.
+        PstrykBuyNextHourPriceSensor(coordinator),
+        PstrykSellNextHourPriceSensor(coordinator),
     ]
-    
+
     async_add_entities(entities)
 
 
@@ -248,3 +253,92 @@ class PstrykSellPriceSensor(PstrykBaseSensor):
         except Exception as error:
             _LOGGER.error("Error extracting sell price attributes: %s", error)
             return {}
+
+
+# -----------------------------------------------------------------------------
+# "Next hour" sensors – expose the price that will be in effect during the
+# upcoming hour. They reuse the data already fetched by the coordinator so they
+# come at no extra API cost and give the user a ready-to-consume numeric entity
+# without the need for additional template helpers.
+# -----------------------------------------------------------------------------
+
+
+class _PstrykNextHourMixin:
+    """Mixin providing helper to calculate next hour price from coordinator."""
+
+    def _get_next_hour_price(self, price_key: str) -> Optional[float]:
+        """Return the price for the upcoming hour.
+
+        :param price_key: either "buy" or "sell" so we know which branch of
+                          the coordinator data to inspect.
+        """
+        if not self.coordinator.data or price_key not in self.coordinator.data:
+            return None
+
+        data = self.coordinator.data[price_key]
+        prices = data.get("prices", [])
+
+        # Define the timestamp (local) representing the beginning of the next
+        # hour.
+        now = dt_util.now()
+        next_hour_start = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+
+        # Iterate through the hourly frames and return the matching price.
+        for item in prices:
+            ts = item.get("timestamp")
+            if not ts:
+                continue
+
+            price_dt = dt_util.parse_datetime(ts)
+            if price_dt is None:
+                continue
+
+            price_local = dt_util.as_local(price_dt)
+            if price_local == next_hour_start:
+                return item.get("price")
+
+        # If we could not find an exact match we return None so HA will treat
+        # the sensor as unavailable instead of silently showing the current
+        # hour again.
+        return None
+
+
+class PstrykBuyNextHourPriceSensor(_PstrykNextHourMixin, PstrykBaseSensor):
+    """Sensor that shows the buy price for the upcoming hour."""
+
+    _attr_name = "Pstryk Buy Price – Next Hour"
+    _attr_unique_id = "pstryk_buy_price_next_hour"
+    _attr_icon = "mdi:clock-fast"
+
+    @property
+    def native_value(self) -> Optional[float]:
+        return self._get_next_hour_price("buy")
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Include the timestamp this price applies to so users can verify."""
+        now = dt_util.now()
+        next_hour_start = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        return {
+            "target_hour": next_hour_start.isoformat(),
+        }
+
+
+class PstrykSellNextHourPriceSensor(_PstrykNextHourMixin, PstrykBaseSensor):
+    """Sensor that shows the sell price for the upcoming hour."""
+
+    _attr_name = "Pstryk Sell Price – Next Hour"
+    _attr_unique_id = "pstryk_sell_price_next_hour"
+    _attr_icon = "mdi:clock-outline"
+
+    @property
+    def native_value(self) -> Optional[float]:
+        return self._get_next_hour_price("sell")
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        now = dt_util.now()
+        next_hour_start = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        return {
+            "target_hour": next_hour_start.isoformat(),
+        }
