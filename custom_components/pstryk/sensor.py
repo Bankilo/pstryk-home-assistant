@@ -253,11 +253,20 @@ class PstrykBuyPriceChartSensor(PstrykBaseSensor):
     _attr_unique_id = "pstryk_buy_price_chart"
     _attr_icon = "mdi:chart-line"
     _attr_state_class = None  # No state class for this sensor
+    _attr_native_unit_of_measurement = "PLN/kWh"
 
     @property
-    def native_value(self) -> str:
-        """Return a static value."""
-        return "chart data"
+    def native_value(self) -> Optional[float]:
+        """Return the current price as the state."""
+        if not self.coordinator.data or "buy" not in self.coordinator.data:
+            return None
+
+        try:
+            data = self.coordinator.data["buy"]
+            return data.get("current_price")
+        except Exception as error:
+            _LOGGER.error("Error retrieving buy price for chart: %s", error)
+            return None
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
@@ -289,7 +298,8 @@ class PstrykBuyPriceChartSensor(PstrykBaseSensor):
 
             return {
                 "chart_data": sorted(chart_data, key=lambda x: x["x"]),
-                "has_future_data": data.get("has_future_data", False)
+                "has_future_data": data.get("has_future_data", False),
+                "all_prices": sorted(prices, key=lambda x: x["timestamp"])
             }
         except Exception as error:
             _LOGGER.error("Error preparing buy price chart data: %s", error)
@@ -303,11 +313,20 @@ class PstrykSellPriceChartSensor(PstrykBaseSensor):
     _attr_unique_id = "pstryk_sell_price_chart"
     _attr_icon = "mdi:chart-line"
     _attr_state_class = None  # No state class for this sensor
+    _attr_native_unit_of_measurement = "PLN/kWh"
 
     @property
-    def native_value(self) -> str:
-        """Return a static value."""
-        return "chart data"
+    def native_value(self) -> Optional[float]:
+        """Return the current price as the state."""
+        if not self.coordinator.data or "sell" not in self.coordinator.data:
+            return None
+
+        try:
+            data = self.coordinator.data["sell"]
+            return data.get("current_price")
+        except Exception as error:
+            _LOGGER.error("Error retrieving sell price for chart: %s", error)
+            return None
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
@@ -339,7 +358,8 @@ class PstrykSellPriceChartSensor(PstrykBaseSensor):
 
             return {
                 "chart_data": sorted(chart_data, key=lambda x: x["x"]),
-                "has_future_data": data.get("has_future_data", False)
+                "has_future_data": data.get("has_future_data", False),
+                "all_prices": sorted(prices, key=lambda x: x["timestamp"])
             }
         except Exception as error:
             _LOGGER.error("Error preparing sell price chart data: %s", error)
