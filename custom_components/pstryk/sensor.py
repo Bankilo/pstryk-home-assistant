@@ -163,16 +163,21 @@ class _PstrykPriceSensor(PstrykBaseSensor):
 
             attrs: Dict[str, Any] = {}
             if today_prices:
-                attrs[ATTR_PRICES_TODAY] = {
-                    ts: price for ts, price in sorted(today_prices, key=lambda x: x[0])
-                }
+                attrs[ATTR_PRICES_TODAY] = [
+                    {"time": ts, "price": price}
+                    for ts, price in sorted(today_prices, key=lambda x: x[0])
+                ]
             if tomorrow_prices:
-                attrs[ATTR_PRICES_TOMORROW] = {
-                    ts: price for ts, price in sorted(tomorrow_prices, key=lambda x: x[0])
-                }
+                attrs[ATTR_PRICES_TOMORROW] = [
+                    {"time": ts, "price": price}
+                    for ts, price in sorted(tomorrow_prices, key=lambda x: x[0])
+                ]
             if today_prices or tomorrow_prices:
                 combined = sorted(today_prices + tomorrow_prices, key=lambda x: x[0])
-                attrs[ATTR_PRICES] = {ts: price for ts, price in combined}
+                attrs[ATTR_PRICES] = [
+                    {"time": ts, "price": price}
+                    for ts, price in combined
+                ]
             if future_prices:
                 attrs[ATTR_PRICES_FUTURE] = sorted(future_prices, key=lambda x: x["timestamp"])
             if next_hour_price is not None:
