@@ -1,6 +1,8 @@
 """Data update coordinator for the Pstryk.pl integration."""
 import asyncio
 import logging
+import json
+import os
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
@@ -52,6 +54,7 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
         self._session = session
         self._api_token = entry.data[CONF_API_TOKEN]
         self._headers = {"Authorization": f"{self._api_token}", "Accept": "application/json"}
+        self._cache_file = hass.config.path(f"{DOMAIN}_cache.json")
 
         super().__init__(
             hass,
@@ -59,6 +62,33 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
             name=DOMAIN,
             update_interval=DEFAULT_SCAN_INTERVAL,
         )
+
+    async def _load_cache(self) -> dict[str, Any] | None:
+        """Load cached data from disk."""
+        if not os.path.exists(self._cache_file):
+            return None
+
+        def _read() -> dict[str, Any] | None:
+            try:
+                with open(self._cache_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as err:  # pylint: disable=broad-except
+                _LOGGER.warning("Failed to read cache: %s", err)
+                return None
+
+        return await asyncio.to_thread(_read)
+
+    async def _save_cache(self, data: dict[str, Any]) -> None:
+        """Persist data to disk."""
+
+        def _write() -> None:
+            try:
+                with open(self._cache_file, "w", encoding="utf-8") as f:
+                    json.dump(data, f)
+            except Exception as err:  # pylint: disable=broad-except
+                _LOGGER.warning("Failed to write cache: %s", err)
+
+        await asyncio.to_thread(_write)
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Update data via API."""
@@ -88,11 +118,14 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
             next_hour = now_utc.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
             self.update_interval = next_hour - now_utc
 
-            return {
-                "buy": buy_data,
-                "sell": sell_data,
-            }
+            data = {"buy": buy_data, "sell": sell_data}
+            await self._save_cache(data)
+            return data
         except (aiohttp.ClientError, asyncio.TimeoutError) as error:
+            _LOGGER.warning("API error: %s. Loading data from cache if available.", error)
+            cached = await self._load_cache()
+            if cached is not None:
+                return cached
             raise UpdateFailed(f"Error communicating with API: {error}") from error
 
     async def _fetch_pricing_data(self, price_type: str, force_future: bool = False) -> dict[str, Any]:
