@@ -8,5 +8,5 @@
   "codeowners": ["@meal"],
   "requirements": ["aiohttp>=3.8.1"],
   "iot_class": "cloud_polling",
-  "version": "0.1.0"
+  "version": "0.2.2"
 }
