@@ -63,7 +63,13 @@ The integration creates the following sensors:
 - `binary_sensor.pstryk_sell_cheap_hour`: Indicates if current hour is flagged as cheap for selling
 - `binary_sensor.pstryk_sell_expensive_hour`: Indicates if current hour is flagged as expensive for selling
 
-Each sensor includes additional attributes with hourly price breakdowns, and the binary sensors include lists of upcoming cheap or expensive hours.
+Each price sensor exposes hourly price data via additional attributes:
+
+- `prices_today` – dictionary of today's prices
+- `prices_tomorrow` – dictionary of tomorrow's prices (when available)
+- `prices` – combined dictionary of today and tomorrow
+
+The binary sensors include lists of upcoming cheap or expensive hours.
 
 ## Usage in Automations
 
