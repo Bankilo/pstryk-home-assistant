@@ -26,9 +26,11 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-def _to_float_precise(value: str | float | int | Decimal, ndigits: int = 3) -> float:
-    """Convert the incoming price string/number to float with Decimal for
-    precise rounding.
+def _to_float_precise(value: str | float | int | Decimal, ndigits: int = 3) -> float | None:
+    """Convert incoming price string/number to float with Decimal for precise
+    rounding.
+
+    Returns ``None`` if conversion fails.
     """
     try:
         dec = Decimal(str(value).replace(",", ".").strip())
