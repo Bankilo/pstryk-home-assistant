@@ -84,6 +84,10 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
                     sell_data["prices"].extend(future_sell_data.get("prices", []))
                     sell_data["has_future_data"] = True
 
+            # Dynamically adjust the next update to align with the top of the hour
+            next_hour = now_utc.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+            self.update_interval = next_hour - now_utc
+
             return {
                 "buy": buy_data,
                 "sell": sell_data,
