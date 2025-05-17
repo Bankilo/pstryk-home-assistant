@@ -65,9 +65,9 @@ The integration creates the following sensors:
 
 Each price sensor exposes hourly price data via additional attributes:
 
-- `prices_today` – dictionary of today's prices
-- `prices_tomorrow` – dictionary of tomorrow's prices (when available)
-- `prices` – combined dictionary of today and tomorrow
+- `prices_today` – list of today's prices in the form `[{"time": "ISO", "price": <value>}, ...]`
+- `prices_tomorrow` – list of tomorrow's prices (when available) using the same structure
+- `prices` – combined list of today and tomorrow
 
 The binary sensors include lists of upcoming cheap or expensive hours.
 
@@ -131,13 +131,13 @@ series:
   - entity: sensor.pstryk_buy_price
     name: Buy Price
     data_generator: |
-      const data = entity.attributes.prices || {};
-      return Object.keys(data).map(k => [k, data[k]]);
+      const data = entity.attributes.prices || [];
+      return data.map(i => [i.time, i.price]);
   - entity: sensor.pstryk_sell_price
     name: Sell Price
     data_generator: |
-      const data = entity.attributes.prices || {};
-      return Object.keys(data).map(k => [k, data[k]]);
+      const data = entity.attributes.prices || [];
+      return data.map(i => [i.time, i.price]);
 ```
 
 This configuration will plot all available hourly prices for today and tomorrow.
