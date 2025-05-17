@@ -23,6 +23,7 @@ from .const import (
     ATTR_IS_CHEAP,
     ATTR_IS_EXPENSIVE,
     ATTR_NEXT_HOUR_PRICE,
+    ATTR_PRICES,
     ATTR_PRICES_FUTURE,
     ATTR_PRICES_TODAY,
     ATTR_PRICES_TOMORROW,
@@ -122,8 +123,8 @@ class _PstrykPriceSensor(PstrykBaseSensor):
             now = dt_util.now()
             prices = branch.get("prices", [])
 
-            today_prices: list[dict] = []
-            tomorrow_prices: list[dict] = []
+            today_prices: list[tuple[str, float]] = []
+            tomorrow_prices: list[tuple[str, float]] = []
             future_prices: list[dict] = []
             next_hour_price: Optional[float] = None
 
@@ -139,20 +140,22 @@ class _PstrykPriceSensor(PstrykBaseSensor):
                     continue
 
                 p_local = dt_util.as_local(p_dt)
-                frame = {
-                    "hour": p_local.hour,
-                    "price": p.get("price"),
-                    "timestamp": ts_str,
-                    ATTR_IS_CHEAP: p.get(ATTR_IS_CHEAP, False),
-                    ATTR_IS_EXPENSIVE: p.get(ATTR_IS_EXPENSIVE, False),
-                }
+                price_val = p.get("price")
 
                 if p_local.date() == now.date():
-                    today_prices.append(frame)
+                    today_prices.append((ts_str, price_val))
                 elif p_local.date() == (now.date() + timedelta(days=1)):
-                    tomorrow_prices.append(frame)
+                    tomorrow_prices.append((ts_str, price_val))
                 elif p_local.date() > (now.date() + timedelta(days=1)):
-                    future_prices.append(frame)
+                    future_prices.append(
+                        {
+                            "timestamp": ts_str,
+                            "hour": p_local.hour,
+                            "price": price_val,
+                            ATTR_IS_CHEAP: p.get(ATTR_IS_CHEAP, False),
+                            ATTR_IS_EXPENSIVE: p.get(ATTR_IS_EXPENSIVE, False),
+                        }
+                    )
 
                 # Determine next-hour price (exact match on timestamp)
                 if p_local == next_hour_start:
@@ -160,9 +163,16 @@ class _PstrykPriceSensor(PstrykBaseSensor):
 
             attrs: Dict[str, Any] = {}
             if today_prices:
-                attrs[ATTR_PRICES_TODAY] = sorted(today_prices, key=lambda x: x["hour"])
+                attrs[ATTR_PRICES_TODAY] = {
+                    ts: price for ts, price in sorted(today_prices, key=lambda x: x[0])
+                }
             if tomorrow_prices:
-                attrs[ATTR_PRICES_TOMORROW] = sorted(tomorrow_prices, key=lambda x: x["hour"])
+                attrs[ATTR_PRICES_TOMORROW] = {
+                    ts: price for ts, price in sorted(tomorrow_prices, key=lambda x: x[0])
+                }
+            if today_prices or tomorrow_prices:
+                combined = sorted(today_prices + tomorrow_prices, key=lambda x: x[0])
+                attrs[ATTR_PRICES] = {ts: price for ts, price in combined}
             if future_prices:
                 attrs[ATTR_PRICES_FUTURE] = sorted(future_prices, key=lambda x: x["timestamp"])
             if next_hour_price is not None:

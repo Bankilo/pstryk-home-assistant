@@ -28,6 +28,7 @@
         "state_attributes": {
           "prices_today": "Today's prices",
           "prices_tomorrow": "Tomorrow's prices",
+          "prices": "Today and tomorrow",
           "next_hour_price": "Next hour price"
         }
       },
@@ -36,6 +37,7 @@
         "state_attributes": {
           "prices_today": "Today's prices",
           "prices_tomorrow": "Tomorrow's prices",
+          "prices": "Today and tomorrow",
           "next_hour_price": "Next hour price"
         }
       },
