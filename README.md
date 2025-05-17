@@ -116,6 +116,38 @@ automation:
           entity_id: switch.high_consumption_device
 ```
 
+## Viewing Price Charts
+
+To visualise hourly prices you can use the
+[ApexCharts card](https://github.com/RomRider/apexcharts-card) in a Lovelace
+dashboard. The `prices` attribute on each price sensor already contains the
+combined list of today's and tomorrow's prices:
+
+```yaml
+type: custom:apexcharts-card
+header:
+  show: true
+series:
+  - entity: sensor.pstryk_buy_price
+    name: Buy Price
+    data_generator: |
+      const data = entity.attributes.prices || {};
+      return Object.keys(data).map(k => [k, data[k]]);
+  - entity: sensor.pstryk_sell_price
+    name: Sell Price
+    data_generator: |
+      const data = entity.attributes.prices || {};
+      return Object.keys(data).map(k => [k, data[k]]);
+```
+
+This configuration will plot all available hourly prices for today and tomorrow.
+
+## Offline Cache
+
+The integration caches the last successful API response to
+`config/pstryk_cache.json`. If the Pstryk.pl API becomes unavailable, cached
+data will be used so your sensors continue to report prices.
+
 ## Troubleshooting
 
 If you encounter issues with the integration:
