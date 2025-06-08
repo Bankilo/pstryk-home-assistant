@@ -5,6 +5,8 @@ DOMAIN = "pstryk"
 API_BASE_URL = "https://api.pstryk.pl/integrations"
 BUY_ENDPOINT = "pricing/?resolution=hour&window_start={start}&window_end={end}"
 SELL_ENDPOINT = "prosumer-pricing/?resolution=hour&window_start={start}&window_end={end}"
+ENERGY_COST_ENDPOINT = "meter-data/energy-cost/?resolution=hour&window_start={start}&window_end={end}"
+ENERGY_USAGE_ENDPOINT = "meter-data/energy-usage/?resolution=hour&window_start={start}&window_end={end}"
 
 CONF_API_TOKEN = "api_token"
 
@@ -20,5 +22,7 @@ ATTR_IS_EXPENSIVE = "is_expensive"
 ATTR_CHEAP_HOURS = "cheap_hours"
 ATTR_EXPENSIVE_HOURS = "expensive_hours"
 ATTR_PRICES_FUTURE = "prices_future"
+ATTR_CURRENT_ENERGY_COST = "current_energy_cost"
+ATTR_PREVIOUS_HOUR_ENERGY_COST = "previous_hour_energy_cost"
 
 COORDINATOR = "coordinator"

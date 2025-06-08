@@ -21,6 +21,8 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     SELL_ENDPOINT,
+    ENERGY_COST_ENDPOINT,
+    ENERGY_USAGE_ENDPOINT,
     ATTR_IS_CHEAP,
     ATTR_IS_EXPENSIVE,
 )
@@ -96,6 +98,12 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
             # Always fetch current data
             buy_data = await self._fetch_pricing_data("buy", force_future=False)
             sell_data = await self._fetch_pricing_data("sell", force_future=False)
+            
+            # Fetch energy cost data for previous hour
+            energy_cost_data = await self._fetch_energy_cost_data()
+            
+            # Fetch energy usage data for previous hour
+            energy_usage_data = await self._fetch_energy_usage_data()
 
             # Also fetch next day data if it's available (after 14:00 UTC)
             now_utc = dt_util.utcnow()
@@ -118,7 +126,7 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
             next_hour = now_utc.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
             self.update_interval = next_hour - now_utc
 
-            data = {"buy": buy_data, "sell": sell_data}
+            data = {"buy": buy_data, "sell": sell_data, "energy_cost": energy_cost_data, "energy_usage": energy_usage_data}
             await self._save_cache(data)
             return data
         except (aiohttp.ClientError, asyncio.TimeoutError) as error:
@@ -229,4 +237,192 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
             ATTR_IS_CHEAP: is_cheap,
             ATTR_IS_EXPENSIVE: is_expensive,
             "has_future_data": has_future_data
+        }
+
+    async def _fetch_energy_cost_data(self) -> dict[str, Any]:
+        """Fetch energy cost data for the previous full hour."""
+        now_utc = dt_util.utcnow()
+        
+        # Get previous full hour window
+        current_hour_start = now_utc.replace(minute=0, second=0, microsecond=0)
+        previous_hour_start = current_hour_start - timedelta(hours=1)
+        previous_hour_end = current_hour_start
+
+        start_utc = previous_hour_start.strftime("%Y-%m-%dT%H:%M:%SZ")
+        end_utc = previous_hour_end.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        endpoint = ENERGY_COST_ENDPOINT.format(start=start_utc, end=end_utc)
+        url = f"{API_BASE_URL}/{endpoint}"
+        
+        _LOGGER.debug("Requesting energy cost data from %s", url)
+        
+        try:
+            async with self._session.get(url, headers=self._headers, timeout=30) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return self._process_energy_cost_data(data)
+                elif response.status == 401 or response.status == 403:
+                    _LOGGER.error("Authentication failed when fetching energy cost data. API token may be invalid.")
+                    raise aiohttp.ClientError("Authentication failed, API token may be invalid")
+                elif response.status == 404:
+                    _LOGGER.warning("Energy cost data not found for previous hour - meter may not have usage data yet")
+                    return {"previous_hour_cost": None, "total_cost": None}
+                else:
+                    _LOGGER.error("Error fetching energy cost data: %s", response.status)
+                    response_text = await response.text()
+                    raise aiohttp.ClientError(f"Error fetching energy cost data: {response.status}")
+        except asyncio.TimeoutError:
+            _LOGGER.error("Timeout when fetching energy cost data from Pstryk API")
+            raise
+
+    def _process_energy_cost_data(self, data: dict) -> dict[str, Any]:
+        """Process the raw energy cost API data."""
+        frames = data.get("frames", [])
+        fae_total_cost = data.get("fae_total_cost")  # This is the actual total cost field
+        total_energy_balance_value = data.get("total_energy_balance_value")
+        
+        if not frames:
+            _LOGGER.warning("No energy cost frames returned")
+            total_cost_value = None
+            if fae_total_cost is not None:
+                total_cost_value = _to_float_precise(fae_total_cost)
+            return {"previous_hour_cost": None, "total_cost": total_cost_value}
+        
+        # Get the cost for the single frame (previous hour)
+        frame = frames[0] if frames else {}
+        
+        # The main cost appears to be in 'energy_balance_value' field
+        raw_frame_cost = frame.get("energy_balance_value")
+        
+        frame_cost = None
+        if raw_frame_cost is not None:
+            frame_cost = _to_float_precise(raw_frame_cost)
+        
+        total_cost_value = None
+        if fae_total_cost is not None:
+            total_cost_value = _to_float_precise(fae_total_cost)
+        
+        # Extract detailed cost breakdown from frame
+        cost_breakdown = {}
+        cost_fields = ['fae_cost', 'var_dist_cost_net', 'fix_dist_cost_net', 
+                      'energy_cost_net', 'service_cost_net', 'excise', 'vat', 
+                      'energy_sold_value', 'energy_balance_value']
+        
+        for field in cost_fields:
+            if field in frame:
+                cost_breakdown[field] = _to_float_precise(frame[field])
+        
+        return {
+            "previous_hour_cost": frame_cost,
+            "total_cost": total_cost_value,
+            "frame_details": {
+                "start": frame.get("start"),
+                "end": frame.get("end"),
+                "cost": frame_cost,
+                "is_live": frame.get("is_live", False),
+                "cost_breakdown": cost_breakdown
+            }
+        }
+
+    async def _fetch_energy_usage_data(self) -> dict[str, Any]:
+        """Fetch energy usage data for the previous full hour."""
+        now_utc = dt_util.utcnow()
+        
+        # Get previous full hour window
+        current_hour_start = now_utc.replace(minute=0, second=0, microsecond=0)
+        previous_hour_start = current_hour_start - timedelta(hours=1)
+        previous_hour_end = current_hour_start
+
+        start_utc = previous_hour_start.strftime("%Y-%m-%dT%H:%M:%SZ")
+        end_utc = previous_hour_end.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        endpoint = ENERGY_USAGE_ENDPOINT.format(start=start_utc, end=end_utc)
+        url = f"{API_BASE_URL}/{endpoint}"
+        
+        _LOGGER.debug("Requesting energy usage data from %s", url)
+        
+        try:
+            async with self._session.get(url, headers=self._headers, timeout=30) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return self._process_energy_usage_data(data)
+                elif response.status == 401 or response.status == 403:
+                    _LOGGER.error("Authentication failed when fetching energy usage data. API token may be invalid.")
+                    raise aiohttp.ClientError("Authentication failed, API token may be invalid")
+                elif response.status == 404:
+                    _LOGGER.warning("Energy usage data not found for previous hour - meter may not have usage data yet")
+                    return {"previous_hour_usage": None, "previous_hour_production": None, "total_usage": None, "total_production": None}
+                else:
+                    _LOGGER.error("Error fetching energy usage data: %s", response.status)
+                    response_text = await response.text()
+                    raise aiohttp.ClientError(f"Error fetching energy usage data: {response.status}")
+        except asyncio.TimeoutError:
+            _LOGGER.error("Timeout when fetching energy usage data from Pstryk API")
+            raise
+
+    def _process_energy_usage_data(self, data: dict) -> dict[str, Any]:
+        """Process the raw energy usage API data."""
+        frames = data.get("frames", [])
+        fae_total_usage = data.get("fae_total_usage")  # Total usage
+        rae_total = data.get("rae_total")  # Total production
+        
+        if not frames:
+            _LOGGER.warning("No energy usage frames returned")
+            total_usage_value = None
+            total_production_value = None
+            if fae_total_usage is not None:
+                total_usage_value = _to_float_precise(fae_total_usage)
+            if rae_total is not None:
+                total_production_value = _to_float_precise(rae_total)
+            return {
+                "previous_hour_usage": None, 
+                "previous_hour_production": None,
+                "total_usage": total_usage_value,
+                "total_production": total_production_value
+            }
+        
+        # Get the usage for the single frame (previous hour)
+        frame = frames[0] if frames else {}
+        
+        # Extract usage and production values
+        raw_fae_usage = frame.get("fae_usage")  # Energy consumed
+        raw_rae = frame.get("rae")  # Energy produced
+        
+        frame_usage = None
+        if raw_fae_usage is not None:
+            frame_usage = _to_float_precise(raw_fae_usage)
+        
+        frame_production = None
+        if raw_rae is not None:
+            frame_production = _to_float_precise(raw_rae)
+        
+        total_usage_value = None
+        if fae_total_usage is not None:
+            total_usage_value = _to_float_precise(fae_total_usage)
+        
+        total_production_value = None
+        if rae_total is not None:
+            total_production_value = _to_float_precise(rae_total)
+        
+        # Extract detailed usage breakdown from frame
+        usage_breakdown = {}
+        usage_fields = ['fae_usage', 'rae', 'energy_balance']
+        
+        for field in usage_fields:
+            if field in frame:
+                usage_breakdown[field] = _to_float_precise(frame[field])
+        
+        return {
+            "previous_hour_usage": frame_usage,
+            "previous_hour_production": frame_production,
+            "total_usage": total_usage_value,
+            "total_production": total_production_value,
+            "frame_details": {
+                "start": frame.get("start"),
+                "end": frame.get("end"),
+                "usage": frame_usage,
+                "production": frame_production,
+                "is_live": frame.get("is_live", False),
+                "usage_breakdown": usage_breakdown
+            }
         }
