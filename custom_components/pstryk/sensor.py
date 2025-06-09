@@ -28,6 +28,7 @@ from .const import (
     ATTR_PRICES_TODAY,
     ATTR_PRICES_TOMORROW,
     ATTR_PREVIOUS_HOUR_ENERGY_COST,
+    CONF_METER_IP,
     COORDINATOR,
     DOMAIN,
 )
@@ -58,6 +59,15 @@ async def async_setup_entry(
         PstrykBuyEnergyUsageSensor(coordinator),
         PstrykSellEnergyProductionSensor(coordinator),
     ]
+    
+    # Add meter sensors if meter is configured
+    meter_ip = entry.data.get(CONF_METER_IP)
+    if meter_ip:
+        from .meter_sensors import PstrykEnergyPowerSensor, PstrykCurrentSensor
+        entities.extend([
+            PstrykEnergyPowerSensor(coordinator),
+            PstrykCurrentSensor(coordinator),
+        ])
 
     async_add_entities(entities)
 

@@ -8,6 +8,20 @@
           "api_token": "API Token",
           "name": "Name"
         }
+      },
+      "meter_selection": {
+        "title": "Select Pstryk Meter",
+        "description": "Found {meter_count} meter(s). Select a meter to connect or enter IP address manually.",
+        "data": {
+          "meter": "Meter"
+        }
+      },
+      "meter_manual": {
+        "title": "Meter Configuration",
+        "description": "Enter the IP address of your Pstryk meter or leave empty to skip meter configuration.",
+        "data": {
+          "meter_ip": "Meter IP Address (optional)"
+        }
       }
     },
     "error": {
@@ -15,7 +29,10 @@
       "cannot_connect": "Failed to connect to Pstryk.pl API, please try again later.",
       "timeout_error": "Connection to Pstryk.pl API timed out, please check your internet connection.",
       "invalid_response": "Received an invalid response from the Pstryk.pl API. Try again later.",
-      "unknown": "An unexpected error occurred while connecting to Pstryk.pl API."
+      "unknown": "An unexpected error occurred while connecting to Pstryk.pl API.",
+      "empty_ip": "Please enter the meter IP address.",
+      "invalid_ip": "Invalid IP address format.",
+      "meter_not_found": "Selected meter not found."
     },
     "abort": {
       "already_configured": "Pstryk.pl is already configured."
@@ -46,6 +63,24 @@
       },
       "pstryk_sell_price_next_hour": {
         "name": "Selling Price – Next Hour"
+      },
+      "pstryk_buy_energy_cost": {
+        "name": "Buy Energy Cost"
+      },
+      "pstryk_sell_energy_cost": {
+        "name": "Sell Energy Value"
+      },
+      "pstryk_buy_energy_usage": {
+        "name": "Energy Usage"
+      },
+      "pstryk_sell_energy_production": {
+        "name": "Energy Production"
+      },
+      "pstryk_energy_power": {
+        "name": "Energy Power"
+      },
+      "pstryk_current": {
+        "name": "Current"
       }
     }
   }

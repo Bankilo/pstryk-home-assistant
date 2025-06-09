@@ -1,0 +1,88 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Konfiguracja Pstryk.pl",
+        "description": "Podaj swój token API z aplikacji Pstryk.pl",
+        "data": {
+          "api_token": "Token API",
+          "name": "Nazwa"
+        }
+      },
+      "meter_selection": {
+        "title": "Wybór miernika Pstryk",
+        "description": "Znaleziono {meter_count} miernik(i). Wybierz miernik do połączenia lub wprowadź IP ręcznie.",
+        "data": {
+          "meter": "Miernik"
+        }
+      },
+      "meter_manual": {
+        "title": "Konfiguracja miernika",
+        "description": "Podaj adres IP miernika Pstryk lub pozostaw puste, aby pominąć konfigurację miernika.",
+        "data": {
+          "meter_ip": "Adres IP miernika (opcjonalne)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Nie można połączyć się z API",
+      "invalid_auth": "Nieprawidłowy token API",
+      "invalid_response": "Nieprawidłowa odpowiedź z API",
+      "timeout_error": "Przekroczono limit czasu połączenia",
+      "unknown": "Nieoczekiwany błąd",
+      "empty_ip": "Podaj adres IP miernika",
+      "invalid_ip": "Nieprawidłowy format adresu IP",
+      "meter_not_found": "Nie znaleziono wybranego miernika"
+    },
+    "abort": {
+      "already_configured": "Integracja z tym tokenem API jest już skonfigurowana",
+      "unknown": "Nieoczekiwany błąd"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "pstryk_buy_price": {
+        "name": "Cena zakupu energii",
+        "state_attributes": {
+          "prices_today": "Ceny dzisiaj",
+          "prices_tomorrow": "Ceny jutro",
+          "prices": "Ceny dzisiaj i jutro",
+          "next_hour_price": "Cena w następnej godzinie"
+        }
+      },
+      "pstryk_sell_price": {
+        "name": "Cena sprzedaży energii",
+        "state_attributes": {
+          "prices_today": "Ceny dzisiaj",
+          "prices_tomorrow": "Ceny jutro",
+          "prices": "Ceny dzisiaj i jutro",
+          "next_hour_price": "Cena w następnej godzinie"
+        }
+      },
+      "pstryk_buy_price_next_hour": {
+        "name": "Cena zakupu – następna godzina"
+      },
+      "pstryk_sell_price_next_hour": {
+        "name": "Cena sprzedaży – następna godzina"
+      },
+      "pstryk_buy_energy_cost": {
+        "name": "Koszt zakupu energii"
+      },
+      "pstryk_sell_energy_cost": {
+        "name": "Wartość sprzedaży energii"
+      },
+      "pstryk_buy_energy_usage": {
+        "name": "Zużycie energii"
+      },
+      "pstryk_sell_energy_production": {
+        "name": "Produkcja energii"
+      },
+      "pstryk_energy_power": {
+        "name": "Moc energii"
+      },
+      "pstryk_current": {
+        "name": "Prąd"
+      }
+    }
+  }
+} 

@@ -18,7 +18,9 @@ from .const import (
     API_BASE_URL,
     BUY_ENDPOINT,
     CONF_API_TOKEN,
+    CONF_METER_IP,
     DEFAULT_SCAN_INTERVAL,
+    METER_SCAN_INTERVAL,
     DOMAIN,
     SELL_ENDPOINT,
     ENERGY_COST_ENDPOINT,
@@ -46,6 +48,20 @@ def _to_float_precise(value: str | float | int | Decimal, ndigits: int = 3) -> f
         return None
 
 
+def _get_meter_sensor_value(meter_data: dict, sensor_id: int, sensor_type: str) -> float | None:
+    """Extract sensor value from meter data by id and type."""
+    if not meter_data or "multiSensor" not in meter_data:
+        return None
+    
+    sensors = meter_data["multiSensor"].get("sensors", [])
+    for sensor in sensors:
+        if sensor.get("id") == sensor_id and sensor.get("type") == sensor_type:
+            value = sensor.get("value")
+            if value is not None:
+                return float(value)
+    return None
+
+
 class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching data from the API."""
 
@@ -57,6 +73,7 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
         self._api_token = entry.data[CONF_API_TOKEN]
         self._headers = {"Authorization": f"{self._api_token}", "Accept": "application/json"}
         self._cache_file = hass.config.path(f"{DOMAIN}_cache.json")
+        self._meter_ip = entry.data.get(CONF_METER_IP)
 
         super().__init__(
             hass,
@@ -64,6 +81,10 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
             name=DOMAIN,
             update_interval=DEFAULT_SCAN_INTERVAL,
         )
+        
+        # Setup separate timer for meter data if meter is configured
+        if self._meter_ip:
+            self._setup_meter_timer()
 
     async def _load_cache(self) -> dict[str, Any] | None:
         """Load cached data from disk."""
@@ -104,6 +125,11 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
             
             # Fetch energy usage data for previous hour
             energy_usage_data = await self._fetch_energy_usage_data()
+            
+            # Fetch meter state data if meter is configured
+            meter_state_data = None
+            if self._meter_ip:
+                meter_state_data = await self._fetch_meter_state_data()
 
             # Also fetch next day data if it's available (after 14:00 UTC)
             now_utc = dt_util.utcnow()
@@ -126,7 +152,16 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
             next_hour = now_utc.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
             self.update_interval = next_hour - now_utc
 
-            data = {"buy": buy_data, "sell": sell_data, "energy_cost": energy_cost_data, "energy_usage": energy_usage_data}
+            data = {
+                "buy": buy_data, 
+                "sell": sell_data, 
+                "energy_cost": energy_cost_data, 
+                "energy_usage": energy_usage_data
+            }
+            
+            # Add meter state data if available
+            if meter_state_data is not None:
+                data["meter_state"] = meter_state_data
             await self._save_cache(data)
             return data
         except (aiohttp.ClientError, asyncio.TimeoutError) as error:
@@ -426,3 +461,65 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
                 "usage_breakdown": usage_breakdown
             }
         }
+
+    async def _fetch_meter_state_data(self) -> dict[str, Any] | None:
+        """Fetch current state data from Pstryk meter.
+        
+        Returns processed meter state data or None if unavailable.
+        """
+        if not self._meter_ip:
+            return None
+            
+        # Ensure we have http:// prefix
+        if not self._meter_ip.startswith(('http://', 'https://')):
+            meter_url = f"http://{self._meter_ip}"
+        else:
+            meter_url = self._meter_ip
+        
+        if not meter_url.endswith('/'):
+            meter_url += '/'
+        
+        try:
+            async with self._session.get(f"{meter_url}state", timeout=30) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    _LOGGER.debug("Successfully fetched meter state data from %s", self._meter_ip)
+                    return data
+                    
+                else:
+                    _LOGGER.warning(
+                        "Failed to fetch meter state data: HTTP %s", response.status
+                    )
+                    return None
+                    
+        except asyncio.TimeoutError:
+            _LOGGER.error("Timeout when fetching meter state data from %s", self._meter_ip)
+            return None
+        except aiohttp.ClientError as err:
+            _LOGGER.error("Client error when fetching meter state data: %s", err)
+            return None
+        except Exception as err:  # pylint: disable=broad-except
+            _LOGGER.exception("Unexpected error when fetching meter state data: %s", err)
+            return None
+
+    def _setup_meter_timer(self) -> None:
+        """Setup recurring timer for meter data updates."""
+        async def _update_meter_data(now) -> None:
+            """Update meter data independently from API data."""
+            try:
+                meter_data = await self._fetch_meter_state_data()
+                if meter_data is not None:
+                    # Update only the meter_state part of coordinator data
+                    if self.data is None:
+                        self.data = {}
+                    self.data["meter_state"] = meter_data
+                    # Notify listeners of the update
+                    self.async_update_listeners()
+            except Exception as err:
+                _LOGGER.error("Error updating meter data: %s", err)
+        
+        # Schedule recurring meter updates
+        from homeassistant.helpers.event import async_track_time_interval
+        async_track_time_interval(
+            self.hass, _update_meter_data, METER_SCAN_INTERVAL
+        )

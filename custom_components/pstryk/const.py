@@ -9,8 +9,14 @@ ENERGY_COST_ENDPOINT = "meter-data/energy-cost/?resolution=hour&window_start={st
 ENERGY_USAGE_ENDPOINT = "meter-data/energy-usage/?resolution=hour&window_start={start}&window_end={end}"
 
 CONF_API_TOKEN = "api_token"
+CONF_METER_IP = "meter_ip"
+CONF_METER_AUTO_DETECTED = "meter_auto_detected"
 
-DEFAULT_SCAN_INTERVAL = timedelta(hours=1)
+# mDNS service type for Pstryk meter discovery
+MDNS_SERVICE_TYPE = "_pstryk._tcp.local."
+
+DEFAULT_SCAN_INTERVAL = timedelta(hours=1)  # For API data
+METER_SCAN_INTERVAL = timedelta(seconds=10)  # For local meter data
 
 ATTR_CURRENT_PRICE = "current_price"
 ATTR_NEXT_HOUR_PRICE = "next_hour_price"
