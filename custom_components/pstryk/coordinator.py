@@ -48,18 +48,40 @@ def _to_float_precise(value: str | float | int | Decimal, ndigits: int = 3) -> f
         return None
 
 
-def _get_meter_sensor_value(meter_data: dict, sensor_id: int, sensor_type: str) -> float | None:
-    """Extract sensor value from meter data by id and type."""
+def _get_meter_energy_value(meter_data: dict, sensor_type: str) -> float | None:
+    """Extract energy-related sensor value from meter data for sensor id=0."""
     if not meter_data or "multiSensor" not in meter_data:
         return None
     
     sensors = meter_data["multiSensor"].get("sensors", [])
     for sensor in sensors:
-        if sensor.get("id") == sensor_id and sensor.get("type") == sensor_type:
+        if sensor.get("id") == 0 and sensor.get("type") == sensor_type:
             value = sensor.get("value")
             if value is not None:
                 return float(value)
     return None
+
+
+def _get_meter_total_current(meter_data: dict) -> float | None:
+    """Calculate total current by summing values from sensors with id=1,2,3 and type=current."""
+    if not meter_data or "multiSensor" not in meter_data:
+        return None
+    
+    sensors = meter_data["multiSensor"].get("sensors", [])
+    total_current = 0
+    found_sensors = 0
+    
+    for sensor_id in [1, 2, 3]:
+        for sensor in sensors:
+            if sensor.get("id") == sensor_id and sensor.get("type") == "current":
+                value = sensor.get("value")
+                if value is not None:
+                    total_current += float(value)
+                    found_sensors += 1
+                break
+    
+    # Return total only if at least one sensor was found
+    return total_current if found_sensors > 0 else None
 
 
 class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
@@ -126,6 +148,22 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
             # Fetch energy usage data for previous hour
             energy_usage_data = await self._fetch_energy_usage_data()
             
+            # Fetch energy cost and usage data for previous day
+            energy_cost_yesterday = await self._fetch_energy_cost_yesterday()
+            energy_usage_yesterday = await self._fetch_energy_usage_yesterday()
+            
+            # Fetch energy cost and usage data for previous month
+            energy_cost_previous_month = await self._fetch_energy_cost_previous_month()
+            energy_usage_previous_month = await self._fetch_energy_usage_previous_month()
+            
+            # Fetch energy cost and usage data for current day
+            energy_cost_today = await self._fetch_energy_cost_today()
+            energy_usage_today = await self._fetch_energy_usage_today()
+            
+            # Fetch energy cost and usage data for current month
+            energy_cost_current_month = await self._fetch_energy_cost_current_month()
+            energy_usage_current_month = await self._fetch_energy_usage_current_month()
+            
             # Fetch meter state data if meter is configured
             meter_state_data = None
             if self._meter_ip:
@@ -156,7 +194,15 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
                 "buy": buy_data, 
                 "sell": sell_data, 
                 "energy_cost": energy_cost_data, 
-                "energy_usage": energy_usage_data
+                "energy_usage": energy_usage_data,
+                "energy_cost_yesterday": energy_cost_yesterday,
+                "energy_usage_yesterday": energy_usage_yesterday,
+                "energy_cost_previous_month": energy_cost_previous_month,
+                "energy_usage_previous_month": energy_usage_previous_month,
+                "energy_cost_today": energy_cost_today,
+                "energy_usage_today": energy_usage_today,
+                "energy_cost_current_month": energy_cost_current_month,
+                "energy_usage_current_month": energy_usage_current_month
             }
             
             # Add meter state data if available
@@ -523,3 +569,258 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
         async_track_time_interval(
             self.hass, _update_meter_data, METER_SCAN_INTERVAL
         )
+
+    async def _fetch_energy_cost_period(self, start_datetime, end_datetime, period_name: str) -> dict[str, Any]:
+        """Fetch energy cost data for a specific period."""
+        start_utc = start_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")
+        end_utc = end_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        endpoint = ENERGY_COST_ENDPOINT.format(start=start_utc, end=end_utc)
+        url = f"{API_BASE_URL}/{endpoint}"
+        
+        _LOGGER.debug("Requesting %s energy cost data from %s", period_name, url)
+        
+        try:
+            async with self._session.get(url, headers=self._headers, timeout=30) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return self._process_energy_cost_period_data(data, period_name)
+                elif response.status == 401 or response.status == 403:
+                    _LOGGER.error("Authentication failed when fetching %s energy cost data", period_name)
+                    raise aiohttp.ClientError("Authentication failed, API token may be invalid")
+                elif response.status == 404:
+                    _LOGGER.warning("Energy cost data not found for %s", period_name)
+                    return {f"{period_name}_cost": None, f"{period_name}_total_cost": None}
+                else:
+                    _LOGGER.error("Error fetching %s energy cost data: %s", period_name, response.status)
+                    raise aiohttp.ClientError(f"Error fetching {period_name} energy cost data: {response.status}")
+        except asyncio.TimeoutError:
+            _LOGGER.error("Timeout when fetching %s energy cost data from Pstryk API", period_name)
+            raise
+
+    async def _fetch_energy_usage_period(self, start_datetime, end_datetime, period_name: str) -> dict[str, Any]:
+        """Fetch energy usage data for a specific period."""
+        start_utc = start_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")
+        end_utc = end_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        endpoint = ENERGY_USAGE_ENDPOINT.format(start=start_utc, end=end_utc)
+        url = f"{API_BASE_URL}/{endpoint}"
+        
+        _LOGGER.debug("Requesting %s energy usage data from %s", period_name, url)
+        
+        try:
+            async with self._session.get(url, headers=self._headers, timeout=30) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return self._process_energy_usage_period_data(data, period_name)
+                elif response.status == 401 or response.status == 403:
+                    _LOGGER.error("Authentication failed when fetching %s energy usage data", period_name)
+                    raise aiohttp.ClientError("Authentication failed, API token may be invalid")
+                elif response.status == 404:
+                    _LOGGER.warning("Energy usage data not found for %s", period_name)
+                    return {f"{period_name}_usage": None, f"{period_name}_production": None}
+                else:
+                    _LOGGER.error("Error fetching %s energy usage data: %s", period_name, response.status)
+                    raise aiohttp.ClientError(f"Error fetching {period_name} energy usage data: {response.status}")
+        except asyncio.TimeoutError:
+            _LOGGER.error("Timeout when fetching %s energy usage data from Pstryk API", period_name)
+            raise
+
+    async def _fetch_energy_cost_yesterday(self) -> dict[str, Any]:
+        """Fetch energy cost data for the previous day."""
+        # Use local time first, then convert to UTC to ensure 00:00 local time = correct UTC
+        now_local = dt_util.now()
+        today_start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        yesterday_start_local = today_start_local - timedelta(days=1)
+        yesterday_start_utc = dt_util.as_utc(yesterday_start_local)
+        today_start_utc = dt_util.as_utc(today_start_local)
+
+        return await self._fetch_energy_cost_period(yesterday_start_utc, today_start_utc, "yesterday")
+
+    async def _fetch_energy_usage_yesterday(self) -> dict[str, Any]:
+        """Fetch energy usage data for the previous day."""
+        # Use local time first, then convert to UTC to ensure 00:00 local time = correct UTC
+        now_local = dt_util.now()
+        today_start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        yesterday_start_local = today_start_local - timedelta(days=1)
+        yesterday_start_utc = dt_util.as_utc(yesterday_start_local)
+        today_start_utc = dt_util.as_utc(today_start_local)
+
+        return await self._fetch_energy_usage_period(yesterday_start_utc, today_start_utc, "yesterday")
+
+    async def _fetch_energy_cost_previous_month(self) -> dict[str, Any]:
+        """Fetch energy cost data for the previous month."""
+        # Use local time first, then convert to UTC to ensure 00:00 local time = correct UTC
+        now_local = dt_util.now()
+        first_day_this_month_local = now_local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        
+        if first_day_this_month_local.month == 1:
+            last_month_start_local = first_day_this_month_local.replace(year=first_day_this_month_local.year - 1, month=12)
+        else:
+            last_month_start_local = first_day_this_month_local.replace(month=first_day_this_month_local.month - 1)
+        
+        last_month_start_utc = dt_util.as_utc(last_month_start_local)
+        previous_month_end_utc = dt_util.as_utc(first_day_this_month_local)
+
+        return await self._fetch_energy_cost_period(last_month_start_utc, previous_month_end_utc, "previous_month")
+
+    async def _fetch_energy_usage_previous_month(self) -> dict[str, Any]:
+        """Fetch energy usage data for the previous month."""
+        # Use local time first, then convert to UTC to ensure 00:00 local time = correct UTC
+        now_local = dt_util.now()
+        first_day_this_month_local = now_local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        
+        if first_day_this_month_local.month == 1:
+            last_month_start_local = first_day_this_month_local.replace(year=first_day_this_month_local.year - 1, month=12)
+        else:
+            last_month_start_local = first_day_this_month_local.replace(month=first_day_this_month_local.month - 1)
+        
+        last_month_start_utc = dt_util.as_utc(last_month_start_local)
+        previous_month_end_utc = dt_util.as_utc(first_day_this_month_local)
+
+        return await self._fetch_energy_usage_period(last_month_start_utc, previous_month_end_utc, "previous_month")
+
+    async def _fetch_energy_cost_today(self) -> dict[str, Any]:
+        """Fetch energy cost data for the current day."""
+        # Use local time first, then convert to UTC to ensure 00:00 local time = correct UTC
+        now_local = dt_util.now()
+        today_start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start_utc = dt_util.as_utc(today_start_local)
+        now_utc = dt_util.utcnow()
+
+        return await self._fetch_energy_cost_period(today_start_utc, now_utc, "today")
+
+    async def _fetch_energy_usage_today(self) -> dict[str, Any]:
+        """Fetch energy usage data for the current day."""
+        # Use local time first, then convert to UTC to ensure 00:00 local time = correct UTC
+        now_local = dt_util.now()
+        today_start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start_utc = dt_util.as_utc(today_start_local)
+        now_utc = dt_util.utcnow()
+
+        return await self._fetch_energy_usage_period(today_start_utc, now_utc, "today")
+
+    async def _fetch_energy_cost_current_month(self) -> dict[str, Any]:
+        """Fetch energy cost data for the current month."""
+        # Use local time first, then convert to UTC to ensure 00:00 local time = correct UTC
+        now_local = dt_util.now()
+        current_month_start_local = now_local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        current_month_start_utc = dt_util.as_utc(current_month_start_local)
+        now_utc = dt_util.utcnow()
+
+        return await self._fetch_energy_cost_period(current_month_start_utc, now_utc, "current_month")
+
+    async def _fetch_energy_usage_current_month(self) -> dict[str, Any]:
+        """Fetch energy usage data for the current month."""
+        # Use local time first, then convert to UTC to ensure 00:00 local time = correct UTC
+        now_local = dt_util.now()
+        current_month_start_local = now_local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        current_month_start_utc = dt_util.as_utc(current_month_start_local)
+        now_utc = dt_util.utcnow()
+
+        return await self._fetch_energy_usage_period(current_month_start_utc, now_utc, "current_month")
+
+    def _process_energy_cost_period_data(self, data: dict, period: str) -> dict[str, Any]:
+        """Process energy cost data for a specific period (yesterday or previous_month)."""
+        frames = data.get("frames", [])
+        fae_total_cost = data.get("fae_total_cost")
+        
+        if not frames:
+            _LOGGER.warning("No energy cost frames returned for %s", period)
+            total_cost_value = None
+            if fae_total_cost is not None:
+                total_cost_value = _to_float_precise(fae_total_cost)
+            return {f"{period}_cost": None, f"{period}_total_cost": total_cost_value}
+        
+        # Sum up all frame costs for the period
+        total_period_cost = 0
+        sell_value_total = 0
+        
+        for frame in frames:
+            frame_cost = frame.get("energy_balance_value")
+            if frame_cost is not None:
+                frame_cost_float = _to_float_precise(frame_cost)
+                if frame_cost_float is not None:
+                    total_period_cost += frame_cost_float
+            
+            # Also sum up sell values
+            frame_sell = frame.get("energy_sold_value")
+            if frame_sell is not None:
+                frame_sell_float = _to_float_precise(frame_sell)
+                if frame_sell_float is not None:
+                    sell_value_total += frame_sell_float
+        
+        total_cost_value = None
+        if fae_total_cost is not None:
+            total_cost_value = _to_float_precise(fae_total_cost)
+        
+        return {
+            f"{period}_cost": total_period_cost if total_period_cost != 0 else None,
+            f"{period}_sell_value": sell_value_total if sell_value_total != 0 else None,
+            f"{period}_total_cost": total_cost_value,
+            f"{period}_frame_count": len(frames),
+            "period_details": {
+                "start": frames[0].get("start") if frames else None,
+                "end": frames[-1].get("end") if frames else None,
+                "frames": len(frames)
+            }
+        }
+
+    def _process_energy_usage_period_data(self, data: dict, period: str) -> dict[str, Any]:
+        """Process energy usage data for a specific period (yesterday or previous_month)."""
+        frames = data.get("frames", [])
+        fae_total_usage = data.get("fae_total_usage")
+        rae_total = data.get("rae_total")
+        
+        if not frames:
+            _LOGGER.warning("No energy usage frames returned for %s", period)
+            total_usage_value = None
+            total_production_value = None
+            if fae_total_usage is not None:
+                total_usage_value = _to_float_precise(fae_total_usage)
+            if rae_total is not None:
+                total_production_value = _to_float_precise(rae_total)
+            return {
+                f"{period}_usage": None,
+                f"{period}_production": None,
+                f"{period}_total_usage": total_usage_value,
+                f"{period}_total_production": total_production_value
+            }
+        
+        # Sum up all frame usage/production for the period
+        total_period_usage = 0
+        total_period_production = 0
+        
+        for frame in frames:
+            frame_usage = frame.get("fae_usage")
+            if frame_usage is not None:
+                frame_usage_float = _to_float_precise(frame_usage)
+                if frame_usage_float is not None:
+                    total_period_usage += frame_usage_float
+            
+            frame_production = frame.get("rae")
+            if frame_production is not None:
+                frame_production_float = _to_float_precise(frame_production)
+                if frame_production_float is not None:
+                    total_period_production += frame_production_float
+        
+        total_usage_value = None
+        if fae_total_usage is not None:
+            total_usage_value = _to_float_precise(fae_total_usage)
+        
+        total_production_value = None
+        if rae_total is not None:
+            total_production_value = _to_float_precise(rae_total)
+        
+        return {
+            f"{period}_usage": total_period_usage if total_period_usage != 0 else None,
+            f"{period}_production": total_period_production if total_period_production != 0 else None,
+            f"{period}_total_usage": total_usage_value,
+            f"{period}_total_production": total_production_value,
+            f"{period}_frame_count": len(frames),
+            "period_details": {
+                "start": frames[0].get("start") if frames else None,
+                "end": frames[-1].get("end") if frames else None,
+                "frames": len(frames)
+            }
+        }

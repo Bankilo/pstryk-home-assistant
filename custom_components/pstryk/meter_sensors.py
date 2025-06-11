@@ -11,7 +11,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .const import DOMAIN
-from .coordinator import PstrykDataUpdateCoordinator, _get_meter_sensor_value
+from .coordinator import PstrykDataUpdateCoordinator, _get_meter_energy_value, _get_meter_total_current
 
 
 class PstrykMeterBaseSensor(CoordinatorEntity, SensorEntity):
@@ -60,7 +60,7 @@ class PstrykEnergyPowerSensor(PstrykMeterBaseSensor):
         
         meter_data = self.coordinator.data.get("meter_state")
         # Get activePower in W for sensor id=0
-        power_w = _get_meter_sensor_value(meter_data, 0, "activePower")
+        power_w = _get_meter_energy_value(meter_data, "activePower")
         
         if power_w is not None:
             # Convert from W to kW
@@ -77,16 +77,16 @@ class PstrykEnergyPowerSensor(PstrykMeterBaseSensor):
         attrs = {}
         
         # Add raw power value in watts
-        power_w = _get_meter_sensor_value(meter_data, 0, "activePower")
+        power_w = _get_meter_energy_value(meter_data, "activePower")
         if power_w is not None:
             attrs["power_watts"] = power_w
         
         # Add reactive and apparent power if available
-        reactive_power = _get_meter_sensor_value(meter_data, 0, "reactivePower")
+        reactive_power = _get_meter_energy_value(meter_data, "reactivePower")
         if reactive_power is not None:
             attrs["reactive_power_var"] = reactive_power
         
-        apparent_power = _get_meter_sensor_value(meter_data, 0, "apparentPower")
+        apparent_power = _get_meter_energy_value(meter_data, "apparentPower")
         if apparent_power is not None:
             attrs["apparent_power_va"] = apparent_power
         
@@ -110,8 +110,8 @@ class PstrykCurrentSensor(PstrykMeterBaseSensor):
             return None
         
         meter_data = self.coordinator.data.get("meter_state")
-        # Get current for sensor id=0 - value seems to be in mA
-        current_ma = _get_meter_sensor_value(meter_data, 0, "current")
+        # Get total current by summing values from sensors id=1,2,3 - value seems to be in mA
+        current_ma = _get_meter_total_current(meter_data)
         
         if current_ma is not None:
             # Convert from mA to A
@@ -127,18 +127,29 @@ class PstrykCurrentSensor(PstrykMeterBaseSensor):
         meter_data = self.coordinator.data.get("meter_state")
         attrs = {}
         
-        # Add raw current value in mA
-        current_ma = _get_meter_sensor_value(meter_data, 0, "current")
+        # Add raw total current value in mA
+        current_ma = _get_meter_total_current(meter_data)
         if current_ma is not None:
             attrs["current_milliamps"] = current_ma
         
-        # Add voltage and frequency if available
-        voltage = _get_meter_sensor_value(meter_data, 0, "voltage")
+        # Add individual phase currents for debugging
+        if meter_data and "multiSensor" in meter_data:
+            sensors = meter_data["multiSensor"].get("sensors", [])
+            for sensor_id in [1, 2, 3]:
+                for sensor in sensors:
+                    if sensor.get("id") == sensor_id and sensor.get("type") == "current":
+                        value = sensor.get("value")
+                        if value is not None:
+                            attrs[f"phase_{sensor_id}_current_ma"] = float(value)
+                        break
+        
+        # Add voltage and frequency if available (still using sensor id=0 for these)
+        voltage = _get_meter_energy_value(meter_data, "voltage")
         if voltage is not None:
             # Voltage seems to be in centivolts (2453 = 245.3V)
             attrs["voltage_v"] = round(voltage / 100, 1)
         
-        frequency = _get_meter_sensor_value(meter_data, 0, "frequency")
+        frequency = _get_meter_energy_value(meter_data, "frequency")
         if frequency is not None:
             # Frequency seems to be in millihertz (49970 = 49.97 Hz)
             attrs["frequency_hz"] = round(frequency / 1000, 2)
