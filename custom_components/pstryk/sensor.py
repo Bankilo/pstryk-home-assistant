@@ -27,6 +27,8 @@ from .const import (
     ATTR_PRICES_FUTURE,
     ATTR_PRICES_TODAY,
     ATTR_PRICES_TOMORROW,
+    ATTR_PREVIOUS_HOUR_ENERGY_COST,
+    CONF_METER_IP,
     COORDINATOR,
     DOMAIN,
 )
@@ -50,7 +52,22 @@ async def async_setup_entry(
         # require any extra API calls.
         PstrykBuyNextHourPriceSensor(coordinator),
         PstrykSellNextHourPriceSensor(coordinator),
+        # Energy cost sensors for previous full hour
+        PstrykBuyEnergyCostSensor(coordinator),
+        PstrykSellEnergyCostSensor(coordinator),
+        # Energy usage sensors for previous full hour
+        PstrykBuyEnergyUsageSensor(coordinator),
+        PstrykSellEnergyProductionSensor(coordinator),
     ]
+    
+    # Add meter sensors if meter is configured
+    meter_ip = entry.data.get(CONF_METER_IP)
+    if meter_ip:
+        from .meter_sensors import PstrykEnergyPowerSensor, PstrykCurrentSensor
+        entities.extend([
+            PstrykEnergyPowerSensor(coordinator),
+            PstrykCurrentSensor(coordinator),
+        ])
 
     async_add_entities(entities)
 
@@ -299,3 +316,257 @@ class PstrykSellNextHourPriceSensor(_PstrykNextHourMixin, PstrykBaseSensor):
         return {
             "target_hour": next_hour_start.isoformat(),
         }
+
+
+# -----------------------------------------------------------------------------
+# Energy cost sensor – shows the actual energy cost from the previous full hour
+# based on meter readings and current energy prices
+# -----------------------------------------------------------------------------
+
+
+class PstrykBuyEnergyCostSensor(PstrykBaseSensor):
+    """Sensor for energy buy cost from previous full hour."""
+
+    _attr_name = "Pstryk Buy Energy Cost – Previous Hour"
+    _attr_unique_id = "pstryk_energy_cost_buy_previous_hour"
+    _attr_icon = "mdi:cash-multiple"
+    _attr_native_unit_of_measurement = "PLN"
+    _attr_device_class = SensorDeviceClass.MONETARY
+
+    @property
+    def native_value(self) -> Optional[float]:
+        """Energy buy cost for the previous full hour."""
+        if not self.coordinator.data or "energy_cost" not in self.coordinator.data:
+            return None
+        
+        energy_cost_data = self.coordinator.data["energy_cost"]
+        return energy_cost_data.get("previous_hour_cost")
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Include additional energy cost details."""
+        if not self.coordinator.data or "energy_cost" not in self.coordinator.data:
+            return {}
+        
+        energy_cost_data = self.coordinator.data["energy_cost"]
+        frame_details = energy_cost_data.get("frame_details", {})
+        
+        attrs = {}
+        
+        # Add total cost if available
+        if energy_cost_data.get("total_cost") is not None:
+            attrs["total_cost"] = energy_cost_data["total_cost"]
+        
+        # Add frame timing details
+        if frame_details.get("start"):
+            start_dt = dt_util.parse_datetime(frame_details["start"])
+            if start_dt:
+                attrs["period_start"] = dt_util.as_local(start_dt).isoformat()
+        
+        if frame_details.get("end"):
+            end_dt = dt_util.parse_datetime(frame_details["end"])
+            if end_dt:
+                attrs["period_end"] = dt_util.as_local(end_dt).isoformat()
+        
+        # Add live indicator
+        if frame_details.get("is_live") is not None:
+            attrs["is_live"] = frame_details["is_live"]
+        
+        # Add detailed cost breakdown
+        cost_breakdown = frame_details.get("cost_breakdown", {})
+        if cost_breakdown:
+            attrs.update({
+                "fae_cost": cost_breakdown.get("fae_cost"),
+                "var_dist_cost_net": cost_breakdown.get("var_dist_cost_net"),
+                "fix_dist_cost_net": cost_breakdown.get("fix_dist_cost_net"),
+                "energy_cost_net": cost_breakdown.get("energy_cost_net"),
+                "service_cost_net": cost_breakdown.get("service_cost_net"),
+                "excise": cost_breakdown.get("excise"),
+                "vat": cost_breakdown.get("vat"),
+                "energy_sold_value": cost_breakdown.get("energy_sold_value"),
+                "energy_balance_value": cost_breakdown.get("energy_balance_value"),
+            })
+        
+        return attrs
+    
+class PstrykSellEnergyCostSensor(PstrykBaseSensor):
+    """Sensor for energy sell value from previous full hour."""
+
+    _attr_name = "Pstryk Sell Energy Cost – Previous Hour"
+    _attr_unique_id = "pstryk_energy_cost_sell_previous_hour"
+    _attr_icon = "mdi:cash-plus"
+    _attr_native_unit_of_measurement = "PLN"
+    _attr_device_class = SensorDeviceClass.MONETARY
+
+    @property
+    def native_value(self) -> Optional[float]:
+        """Energy sell value for the previous full hour."""
+        if not self.coordinator.data or "energy_cost" not in self.coordinator.data:
+            return None
+        
+        energy_cost_data = self.coordinator.data["energy_cost"]
+        frame_details = energy_cost_data.get("frame_details", {})
+        cost_breakdown = frame_details.get("cost_breakdown", {})
+        
+        return cost_breakdown.get("energy_sold_value")
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Include additional energy sell details."""
+        if not self.coordinator.data or "energy_cost" not in self.coordinator.data:
+            return {}
+        
+        energy_cost_data = self.coordinator.data["energy_cost"]
+        frame_details = energy_cost_data.get("frame_details", {})
+        
+        attrs = {}
+        
+        # Add frame timing details
+        if frame_details.get("start"):
+            start_dt = dt_util.parse_datetime(frame_details["start"])
+            if start_dt:
+                attrs["period_start"] = dt_util.as_local(start_dt).isoformat()
+        
+        if frame_details.get("end"):
+            end_dt = dt_util.parse_datetime(frame_details["end"])
+            if end_dt:
+                attrs["period_end"] = dt_util.as_local(end_dt).isoformat()
+        
+        # Add live indicator
+        if frame_details.get("is_live") is not None:
+            attrs["is_live"] = frame_details["is_live"]
+        
+        # Add total energy sold value from API root level
+        cost_breakdown = frame_details.get("cost_breakdown", {})
+        if cost_breakdown.get("energy_sold_value") is not None:
+            attrs["energy_sold_value"] = cost_breakdown.get("energy_sold_value")
+        
+        return attrs
+
+
+# -----------------------------------------------------------------------------
+# Energy usage sensors – shows actual energy usage and production from the previous full hour
+# based on meter readings
+# -----------------------------------------------------------------------------
+
+
+class PstrykBuyEnergyUsageSensor(PstrykBaseSensor):
+    """Sensor for energy usage from previous full hour."""
+
+    _attr_name = "Pstryk Buy Energy Usage – Previous Hour"
+    _attr_unique_id = "pstryk_buy_energy_usage_previous_hour"
+    _attr_icon = "mdi:flash-auto"
+    _attr_native_unit_of_measurement = "kWh"
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.TOTAL
+
+    @property
+    def native_value(self) -> Optional[float]:
+        """Energy usage for the previous full hour."""
+        if not self.coordinator.data or "energy_usage" not in self.coordinator.data:
+            return None
+        
+        energy_usage_data = self.coordinator.data["energy_usage"]
+        return energy_usage_data.get("previous_hour_usage")
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Include additional energy usage details."""
+        if not self.coordinator.data or "energy_usage" not in self.coordinator.data:
+            return {}
+        
+        energy_usage_data = self.coordinator.data["energy_usage"]
+        frame_details = energy_usage_data.get("frame_details", {})
+        
+        attrs = {}
+        
+        # Add total usage if available
+        if energy_usage_data.get("total_usage") is not None:
+            attrs["total_usage"] = energy_usage_data["total_usage"]
+        
+        # Add frame timing details
+        if frame_details.get("start"):
+            start_dt = dt_util.parse_datetime(frame_details["start"])
+            if start_dt:
+                attrs["period_start"] = dt_util.as_local(start_dt).isoformat()
+        
+        if frame_details.get("end"):
+            end_dt = dt_util.parse_datetime(frame_details["end"])
+            if end_dt:
+                attrs["period_end"] = dt_util.as_local(end_dt).isoformat()
+        
+        # Add live indicator
+        if frame_details.get("is_live") is not None:
+            attrs["is_live"] = frame_details["is_live"]
+        
+        # Add detailed usage breakdown
+        usage_breakdown = frame_details.get("usage_breakdown", {})
+        if usage_breakdown:
+            attrs.update({
+                "fae_usage": usage_breakdown.get("fae_usage"),
+                "rae": usage_breakdown.get("rae"),
+                "energy_balance": usage_breakdown.get("energy_balance"),
+            })
+        
+        return attrs
+
+
+class PstrykSellEnergyProductionSensor(PstrykBaseSensor):
+    """Sensor for energy production from previous full hour."""
+
+    _attr_name = "Pstryk Sell Energy Production – Previous Hour"
+    _attr_unique_id = "pstryk_sell_energy_production_previous_hour"
+    _attr_icon = "mdi:solar-power"
+    _attr_native_unit_of_measurement = "kWh"
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.TOTAL
+
+    @property
+    def native_value(self) -> Optional[float]:
+        """Energy production for the previous full hour."""
+        if not self.coordinator.data or "energy_usage" not in self.coordinator.data:
+            return None
+        
+        energy_usage_data = self.coordinator.data["energy_usage"]
+        return energy_usage_data.get("previous_hour_production")
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Include additional energy production details."""
+        if not self.coordinator.data or "energy_usage" not in self.coordinator.data:
+            return {}
+        
+        energy_usage_data = self.coordinator.data["energy_usage"]
+        frame_details = energy_usage_data.get("frame_details", {})
+        
+        attrs = {}
+        
+        # Add total production if available
+        if energy_usage_data.get("total_production") is not None:
+            attrs["total_production"] = energy_usage_data["total_production"]
+        
+        # Add frame timing details
+        if frame_details.get("start"):
+            start_dt = dt_util.parse_datetime(frame_details["start"])
+            if start_dt:
+                attrs["period_start"] = dt_util.as_local(start_dt).isoformat()
+        
+        if frame_details.get("end"):
+            end_dt = dt_util.parse_datetime(frame_details["end"])
+            if end_dt:
+                attrs["period_end"] = dt_util.as_local(end_dt).isoformat()
+        
+        # Add live indicator
+        if frame_details.get("is_live") is not None:
+            attrs["is_live"] = frame_details["is_live"]
+        
+        # Add energy production value
+        usage_breakdown = frame_details.get("usage_breakdown", {})
+        if usage_breakdown:
+            attrs.update({
+                "fae_usage": usage_breakdown.get("fae_usage"),
+                "rae": usage_breakdown.get("rae"),
+                "energy_balance": usage_breakdown.get("energy_balance"),
+            })
+        
+        return attrs
