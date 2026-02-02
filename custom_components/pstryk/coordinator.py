@@ -185,7 +185,10 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
         
         for frame in frames:
             val = _to_float_precise(frame.get("price_gross"))
-            if val is None:
+            # Skip frames with None or zero prices - zero typically indicates
+            # unavailable data (e.g., tomorrow's prices before they're published).
+            # Real electricity prices are never exactly zero.
+            if val is None or val == 0:
                 continue
                 
             start = dt_util.parse_datetime(frame["start"])
