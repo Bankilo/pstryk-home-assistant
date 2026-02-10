@@ -11,6 +11,7 @@ import aiohttp
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -159,9 +160,11 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
                 if response.status == 200:
                     data = await response.json()
                     return self._process_pricing_data(data, price_type)
-                elif response.status == 401 or response.status == 403:
-                    _LOGGER.error("Authentication failed when fetching %s data. API token may be invalid.", price_type)
-                    raise aiohttp.ClientError("Authentication failed, API token may be invalid")
+                elif response.status in (401, 403):
+                    raise ConfigEntryAuthFailed(
+                        f"Authentication failed when fetching {price_type} data. "
+                        "API token may be invalid."
+                    )
                 else:
                     _LOGGER.error("Error fetching %s data: %s", price_type, response.status)
                     raise aiohttp.ClientError(f"Error fetching {price_type} data: {response.status}")

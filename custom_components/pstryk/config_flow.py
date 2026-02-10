@@ -12,7 +12,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResult
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 
@@ -84,7 +84,7 @@ class PstrykConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle the initial step."""
         errors = {}
 
@@ -113,4 +113,33 @@ class PstrykConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user", data_schema=DATA_SCHEMA, errors=errors
+        )
+
+    async def async_step_reauth(
+        self, entry_data: dict[str, Any]
+    ) -> ConfigFlowResult:
+        """Handle reauth upon an API authentication error."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Dialog that informs the user that reauth is required."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            valid, error = await validate_api_token(
+                self.hass, user_input[CONF_API_TOKEN]
+            )
+            if valid:
+                return self.async_update_reload_and_abort(
+                    self._get_reauth_entry(),
+                    data_updates={CONF_API_TOKEN: user_input[CONF_API_TOKEN]},
+                )
+            errors["base"] = error
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema({vol.Required(CONF_API_TOKEN): str}),
+            errors=errors,
         )

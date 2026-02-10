@@ -1,0 +1,48 @@
+{
+  "entity": {
+    "sensor": {
+      "buy_price": {
+        "default": "mdi:flash"
+      },
+      "sell_price": {
+        "default": "mdi:flash-outline"
+      },
+      "buy_price_next_hour": {
+        "default": "mdi:clock-fast"
+      },
+      "sell_price_next_hour": {
+        "default": "mdi:clock-outline"
+      }
+    },
+    "binary_sensor": {
+      "buy_cheap_hour": {
+        "default": "mdi:currency-usd-off",
+        "state": {
+          "on": "mdi:currency-usd-off",
+          "off": "mdi:currency-usd"
+        }
+      },
+      "buy_expensive_hour": {
+        "default": "mdi:currency-usd",
+        "state": {
+          "on": "mdi:currency-usd",
+          "off": "mdi:currency-usd-off"
+        }
+      },
+      "sell_cheap_hour": {
+        "default": "mdi:currency-usd-off",
+        "state": {
+          "on": "mdi:currency-usd-off",
+          "off": "mdi:currency-usd"
+        }
+      },
+      "sell_expensive_hour": {
+        "default": "mdi:currency-usd",
+        "state": {
+          "on": "mdi:currency-usd",
+          "off": "mdi:currency-usd-off"
+        }
+      }
+    }
+  }
+}
