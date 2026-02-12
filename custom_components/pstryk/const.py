@@ -3,8 +3,11 @@ from datetime import timedelta
 
 DOMAIN = "pstryk"
 API_BASE_URL = "https://api.pstryk.pl/integrations"
-BUY_ENDPOINT = "pricing/?resolution=hour&window_start={start}&window_end={end}"
-SELL_ENDPOINT = "prosumer-pricing/?resolution=hour&window_start={start}&window_end={end}"
+UNIFIED_METRICS_ENDPOINT = (
+    "meter-data/unified-metrics/"
+    "?metrics=carbon,pricing&resolution=hour"
+    "&window_start={start}&window_end={end}"
+)
 
 CONF_API_TOKEN = "api_token"
 

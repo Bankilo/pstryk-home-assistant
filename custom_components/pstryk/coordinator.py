@@ -17,11 +17,10 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     API_BASE_URL,
-    BUY_ENDPOINT,
     CONF_API_TOKEN,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
-    SELL_ENDPOINT,
+    UNIFIED_METRICS_ENDPOINT,
     ATTR_IS_CHEAP,
     ATTR_IS_EXPENSIVE,
 )
@@ -94,32 +93,21 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self) -> dict[str, Any]:
         """Update data via API."""
         try:
-            # Always fetch current data
-            buy_data = await self._fetch_pricing_data("buy", force_future=False)
-            sell_data = await self._fetch_pricing_data("sell", force_future=False)
+            # Single 2-day window covers today + tomorrow; the API returns
+            # whatever hours have published prices.
+            today_local = dt_util.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            window_end_local = today_local + timedelta(days=2)
+            start_utc = dt_util.as_utc(today_local).strftime("%Y-%m-%dT%H:%M:%SZ")
+            end_utc = dt_util.as_utc(window_end_local).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-            # Also fetch next day data if it's available (after 14:00 UTC)
-            now_utc = dt_util.utcnow()
-            is_future_data_time = now_utc.hour >= 14  # Next day data available after 14:00 UTC
-
-            if is_future_data_time:
-                future_buy_data = await self._fetch_pricing_data("buy", force_future=True)
-                future_sell_data = await self._fetch_pricing_data("sell", force_future=True)
-
-                # Merge future data with current data
-                if future_buy_data.get("prices") and buy_data.get("prices"):
-                    buy_data["prices"].extend(future_buy_data.get("prices", []))
-                    buy_data["has_future_data"] = True
-
-                if future_sell_data.get("prices") and sell_data.get("prices"):
-                    sell_data["prices"].extend(future_sell_data.get("prices", []))
-                    sell_data["has_future_data"] = True
+            raw = await self._fetch_unified_data(start_utc, end_utc)
+            data = self._process_unified_data(raw)
 
             # Dynamically adjust the next update to align with the top of the hour
+            now_utc = dt_util.utcnow()
             next_hour = now_utc.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
             self.update_interval = next_hour - now_utc
 
-            data = {"buy": buy_data, "sell": sell_data}
             await self._save_cache(data)
             return data
         except (aiohttp.ClientError, asyncio.TimeoutError) as error:
@@ -129,107 +117,109 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
                 return cached
             raise UpdateFailed(f"Error communicating with API: {error}") from error
 
-    async def _fetch_pricing_data(self, price_type: str, force_future: bool = False) -> dict[str, Any]:
-        """Fetch pricing data from the API.
-
-        If force_future is True, attempts to fetch future data for the next day.
-        Future pricing data is typically available after 14:00 UTC.
-        """
-        today_local = dt_util.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        window_end_local = today_local + timedelta(days=2)
-
-        # If we're forcing future data (after 14:00 UTC), try to get data for tomorrow
-        if force_future:
-            _LOGGER.debug("Attempting to fetch future pricing data for %s", price_type)
-            tomorrow_local = today_local + timedelta(days=1)
-            window_end_local = tomorrow_local + timedelta(days=1)
-            start_utc = dt_util.as_utc(tomorrow_local).strftime("%Y-%m-%dT%H:%M:%SZ")
-        else:
-            start_utc = dt_util.as_utc(today_local).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-        end_utc = dt_util.as_utc(window_end_local).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-        endpoint_tpl = BUY_ENDPOINT if price_type == "buy" else SELL_ENDPOINT
-        endpoint = endpoint_tpl.format(start=start_utc, end=end_utc)
+    async def _fetch_unified_data(self, start_utc: str, end_utc: str) -> dict[str, Any]:
+        """Fetch pricing data from the unified-metrics endpoint."""
+        endpoint = UNIFIED_METRICS_ENDPOINT.format(start=start_utc, end=end_utc)
         url = f"{API_BASE_URL}/{endpoint}"
-        
-        _LOGGER.debug("Requesting %s data from %s", price_type, url)
-        
+
+        _LOGGER.debug("Requesting unified metrics from %s", url)
+
         try:
             async with self._session.get(url, headers=self._headers, timeout=30) as response:
                 if response.status == 200:
-                    data = await response.json()
-                    return self._process_pricing_data(data, price_type)
-                elif response.status in (401, 403):
+                    return await response.json()
+                if response.status in (401, 403):
                     raise ConfigEntryAuthFailed(
-                        f"Authentication failed when fetching {price_type} data. "
-                        "API token may be invalid."
+                        "Authentication failed. API token may be invalid."
                     )
-                else:
-                    _LOGGER.error("Error fetching %s data: %s", price_type, response.status)
-                    raise aiohttp.ClientError(f"Error fetching {price_type} data: {response.status}")
+                _LOGGER.error("Error fetching unified metrics: %s", response.status)
+                raise aiohttp.ClientError(
+                    f"Error fetching unified metrics: {response.status}"
+                )
         except asyncio.TimeoutError:
-            _LOGGER.error("Timeout when fetching %s data from Pstryk API", price_type)
+            _LOGGER.error("Timeout when fetching data from Pstryk API")
             raise
 
-    def _process_pricing_data(self, data: dict, price_type: str) -> dict:
-        """Process the raw API data into a format usable by the sensor."""
+    def _process_unified_data(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Process unified-metrics response into the buy/sell structure sensors expect.
+
+        Each frame contains ``metrics.pricing`` with both ``price_gross`` (buy)
+        and ``price_prosumer_gross`` (sell) in a single object.
+        """
         frames = data.get("frames", [])
         if not frames:
-            _LOGGER.warning("No frames returned for %s prices", price_type)
-            return {"prices": []}
-            
+            _LOGGER.warning("No frames returned from unified-metrics endpoint")
+            empty: dict[str, Any] = {"prices": [], "current_price": None, ATTR_IS_CHEAP: False, ATTR_IS_EXPENSIVE: False, "has_future_data": False}
+            return {"buy": dict(empty), "sell": dict(empty)}
+
         now_utc = dt_util.utcnow()
-        prices = []
-        current_price = None
-        is_cheap = False
-        is_expensive = False
+        today = dt_util.now().date()
+
+        buy_prices: list[dict[str, Any]] = []
+        sell_prices: list[dict[str, Any]] = []
+        buy_current: float | None = None
+        sell_current: float | None = None
+        cur_is_cheap = False
+        cur_is_expensive = False
         has_future_data = False
-        
+
         for frame in frames:
-            val = _to_float_precise(frame.get("price_gross"))
-            if val is None:
+            pricing = frame.get("metrics", {}).get("pricing")
+            if pricing is None:
                 continue
-                
+
+            buy_val = _to_float_precise(pricing.get("price_gross"))
+            sell_val = _to_float_precise(pricing.get("price_prosumer_gross"))
+
             start = dt_util.parse_datetime(frame["start"])
             end = dt_util.parse_datetime(frame["end"])
-            
-            # Validate dates
             if not start or not end:
-                _LOGGER.warning("Invalid datetime format in frames for %s", price_type)
+                _LOGGER.warning("Invalid datetime format in unified-metrics frame")
                 continue
-                
+
             local_start = dt_util.as_local(start)
             timestamp = local_start.isoformat()
-            
-            # Get is_cheap and is_expensive flags
-            frame_is_cheap = frame.get(ATTR_IS_CHEAP, False)
-            frame_is_expensive = frame.get(ATTR_IS_EXPENSIVE, False)
-            
-            prices.append({
+
+            frame_is_cheap = pricing.get(ATTR_IS_CHEAP, False)
+            frame_is_expensive = pricing.get(ATTR_IS_EXPENSIVE, False)
+
+            entry_base = {
                 "timestamp": timestamp,
                 "hour": local_start.hour,
-                "price": val,
                 ATTR_IS_CHEAP: frame_is_cheap,
-                ATTR_IS_EXPENSIVE: frame_is_expensive
-            })
-            
+                ATTR_IS_EXPENSIVE: frame_is_expensive,
+            }
+
+            if buy_val is not None:
+                buy_prices.append({**entry_base, "price": buy_val})
+            if sell_val is not None:
+                sell_prices.append({**entry_base, "price": sell_val})
+
             if start <= now_utc < end:
-                current_price = val
-                is_cheap = frame_is_cheap
-                is_expensive = frame_is_expensive
-                
-            # Check if we have data for future days
-            if local_start.date() > dt_util.now().date():
+                buy_current = buy_val
+                sell_current = sell_val
+                cur_is_cheap = frame_is_cheap
+                cur_is_expensive = frame_is_expensive
+
+            if local_start.date() > today:
                 has_future_data = True
-        
-        # Sort prices by timestamp
-        prices = sorted(prices, key=lambda x: x["timestamp"])
-        
+
+        buy_prices.sort(key=lambda x: x["timestamp"])
+        sell_prices.sort(key=lambda x: x["timestamp"])
+
         return {
-            "prices": prices,
-            "current_price": current_price,
-            ATTR_IS_CHEAP: is_cheap,
-            ATTR_IS_EXPENSIVE: is_expensive,
-            "has_future_data": has_future_data
+            "buy": {
+                "prices": buy_prices,
+                "current_price": buy_current,
+                ATTR_IS_CHEAP: cur_is_cheap,
+                ATTR_IS_EXPENSIVE: cur_is_expensive,
+                "has_future_data": has_future_data,
+            },
+            "sell": {
+                "prices": sell_prices,
+                "current_price": sell_current,
+                ATTR_IS_CHEAP: cur_is_cheap,
+                ATTR_IS_EXPENSIVE: cur_is_expensive,
+                "has_future_data": has_future_data,
+            },
         }

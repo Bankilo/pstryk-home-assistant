@@ -16,7 +16,7 @@ from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 
-from .const import API_BASE_URL, CONF_API_TOKEN, DOMAIN
+from .const import API_BASE_URL, CONF_API_TOKEN, DOMAIN, UNIFIED_METRICS_ENDPOINT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,24 +44,20 @@ async def validate_api_token(hass: HomeAssistant, api_token: str) -> tuple[bool,
     end_utc = tomorrow.strftime("%Y-%m-%dT%H:%M:%SZ")
     
     try:
-        async with session.get(
-            f"{API_BASE_URL}/pricing/?resolution=hour&window_start={start_utc}&window_end={end_utc}", 
-            headers=headers, 
-            timeout=30
-        ) as response:
+        endpoint = UNIFIED_METRICS_ENDPOINT.format(start=start_utc, end=end_utc)
+        url = f"{API_BASE_URL}/{endpoint}"
+        async with session.get(url, headers=headers, timeout=30) as response:
             if response.status == 200:
-                # Verify we can parse the response
                 try:
                     data = await response.json()
                     if "frames" in data:
                         return True, ""
-                    else:
-                        _LOGGER.error("API response missing 'frames' field")
-                        return False, "invalid_response"
+                    _LOGGER.error("API response missing 'frames' field")
+                    return False, "invalid_response"
                 except Exception as err:
                     _LOGGER.error("Error parsing API response: %s", err)
                     return False, "invalid_response"
-            elif response.status == 401 or response.status == 403:
+            elif response.status in (401, 403):
                 return False, "invalid_auth"
             else:
                 _LOGGER.error("Unexpected response from API: %s", response.status)
