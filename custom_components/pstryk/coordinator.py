@@ -23,6 +23,7 @@ from .const import (
     UNIFIED_METRICS_ENDPOINT,
     ATTR_IS_CHEAP,
     ATTR_IS_EXPENSIVE,
+    VERSION,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -53,7 +54,11 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
         """Initialize."""
         self._session = session
         self._api_token = entry.data[CONF_API_TOKEN]
-        self._headers = {"Authorization": f"{self._api_token}", "Accept": "application/json"}
+        self._headers = {
+            "Authorization": f"{self._api_token}",
+            "Accept": "application/json",
+            "User-Agent": f"HomeAssistant Pstryk Official {VERSION}",
+        }
         self._cache_file = hass.config.path(f"{DOMAIN}_cache.json")
 
         super().__init__(

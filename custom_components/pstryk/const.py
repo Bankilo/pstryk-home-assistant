@@ -1,5 +1,10 @@
 """Constants for the Pstryk.pl integration."""
+import json
 from datetime import timedelta
+from pathlib import Path
+
+_manifest = json.loads((Path(__file__).parent / "manifest.json").read_text())
+VERSION = _manifest.get("version", "unknown")
 
 DOMAIN = "pstryk"
 API_BASE_URL = "https://api.pstryk.pl/integrations"
