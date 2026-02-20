@@ -1,25 +1,23 @@
 """Sensor platform for Pstryk.pl integration."""
-from datetime import datetime, timedelta
+from datetime import timedelta
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
 )
 from homeassistant.util import dt as dt_util
 
+from . import PstrykConfigEntry
 from .const import (
-    ATTR_CHEAP_HOURS,
-    ATTR_CURRENT_PRICE,
-    ATTR_EXPENSIVE_HOURS,
     ATTR_IS_CHEAP,
     ATTR_IS_EXPENSIVE,
     ATTR_NEXT_HOUR_PRICE,
@@ -27,7 +25,6 @@ from .const import (
     ATTR_PRICES_FUTURE,
     ATTR_PRICES_TODAY,
     ATTR_PRICES_TOMORROW,
-    COORDINATOR,
     DOMAIN,
 )
 from .coordinator import PstrykDataUpdateCoordinator
@@ -36,18 +33,14 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant, entry: PstrykConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up the Pstryk.pl sensor platform."""
-    coordinator = hass.data[DOMAIN][entry.entry_id][COORDINATOR]
+    coordinator = entry.runtime_data
 
-    # Add sensors
     entities = [
         PstrykBuyPriceSensor(coordinator),
         PstrykSellPriceSensor(coordinator),
-        # "Next hour" price sensors expose the price for the upcoming hour
-        # as the main state. They rely on the same coordinator data and do not
-        # require any extra API calls.
         PstrykBuyNextHourPriceSensor(coordinator),
         PstrykSellNextHourPriceSensor(coordinator),
     ]
@@ -58,6 +51,7 @@ async def async_setup_entry(
 class PstrykBaseSensor(CoordinatorEntity, SensorEntity):
     """Base Pstryk sensor entity."""
 
+    _attr_has_entity_name = True
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_device_class = SensorDeviceClass.MONETARY
     _attr_native_unit_of_measurement = "PLN/kWh"
@@ -67,15 +61,15 @@ class PstrykBaseSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
 
     @property
-    def device_info(self) -> Dict[str, Any]:
+    def device_info(self) -> DeviceInfo:
         """Return device information about this entity."""
-        return {
-            "identifiers": {(DOMAIN, "pstryk_energy_prices")},
-            "name": "Pstryk Energy Prices",
-            "manufacturer": "Pstryk.pl",
-            "model": "API",
-            "sw_version": "1.0",
-        }
+        return DeviceInfo(
+            identifiers={(DOMAIN, "pstryk_energy_prices")},
+            name="Pstryk Energy Prices",
+            manufacturer="Pstryk.pl",
+            model="API",
+            sw_version="1.0",
+        )
 
 
 # -----------------------------------------------------------------------------
@@ -86,13 +80,15 @@ class PstrykBaseSensor(CoordinatorEntity, SensorEntity):
 class _PstrykPriceSensor(PstrykBaseSensor):
     """Shared implementation for buy/sell price sensors."""
 
+    _unrecorded_attributes = frozenset(
+        {ATTR_PRICES_TODAY, ATTR_PRICES_TOMORROW, ATTR_PRICES, ATTR_PRICES_FUTURE, ATTR_IS_CHEAP, ATTR_IS_EXPENSIVE}
+    )
+
     # Must be set by subclass ("buy" | "sell")
     _price_key: str = "buy"
 
-    # Subclass may override icon/name/unique_id as usual
-
     # -------------------- Helpers --------------------
-    def _price_branch(self) -> Optional[dict]:
+    def _price_branch(self) -> dict | None:
         """Return the nested dict for the configured price type."""
         if not self.coordinator.data or self._price_key not in self.coordinator.data:
             return None
@@ -100,18 +96,16 @@ class _PstrykPriceSensor(PstrykBaseSensor):
 
     # -------------------- Home Assistant properties --------------------
     @property
-    def native_value(self) -> Optional[float]:
+    def native_value(self) -> float | None:
         """Current price for the ongoing hour."""
         branch = self._price_branch()
         if branch is None:
             return None
         value = branch.get("current_price")
-        # Ensure HA receives a float (Decimal would work too but float is the
-        # de-facto standard for sensors).
         return float(value) if value is not None else None
 
     @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Organise price frames into today / tomorrow / future buckets and
         expose helper attributes shared by both buy & sell sensors."""
 
@@ -126,7 +120,7 @@ class _PstrykPriceSensor(PstrykBaseSensor):
             today_prices: list[tuple[str, float]] = []
             tomorrow_prices: list[tuple[str, float]] = []
             future_prices: list[dict] = []
-            next_hour_price: Optional[float] = None
+            next_hour_price: float | None = None
 
             next_hour_start = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
 
@@ -161,7 +155,7 @@ class _PstrykPriceSensor(PstrykBaseSensor):
                 if p_local == next_hour_start:
                     next_hour_price = p.get("price")
 
-            attrs: Dict[str, Any] = {}
+            attrs: dict[str, Any] = {}
             if today_prices:
                 attrs[ATTR_PRICES_TODAY] = [
                     {"time": ts, "price": price}
@@ -197,18 +191,16 @@ class _PstrykPriceSensor(PstrykBaseSensor):
 class PstrykBuyPriceSensor(_PstrykPriceSensor):
     """Sensor for Pstryk buy prices."""
 
-    _attr_name = "Pstryk Buy Price"
+    _attr_translation_key = "buy_price"
     _attr_unique_id = "pstryk_buy_price"
-    _attr_icon = "mdi:flash"
     _price_key = "buy"
 
 
 class PstrykSellPriceSensor(_PstrykPriceSensor):
     """Sensor for Pstryk sell prices."""
 
-    _attr_name = "Pstryk Sell Price"
+    _attr_translation_key = "sell_price"
     _attr_unique_id = "pstryk_sell_price"
-    _attr_icon = "mdi:flash-outline"
     _price_key = "sell"
 
 
@@ -223,7 +215,7 @@ class PstrykSellPriceSensor(_PstrykPriceSensor):
 class _PstrykNextHourMixin:
     """Mixin providing helper to calculate next hour price from coordinator."""
 
-    def _get_next_hour_price(self, price_key: str) -> Optional[float]:
+    def _get_next_hour_price(self, price_key: str) -> float | None:
         """Return the price for the upcoming hour.
 
         :param price_key: either "buy" or "sell" so we know which branch of
@@ -235,12 +227,9 @@ class _PstrykNextHourMixin:
         data = self.coordinator.data[price_key]
         prices = data.get("prices", [])
 
-        # Define the timestamp (local) representing the beginning of the next
-        # hour.
         now = dt_util.now()
         next_hour_start = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
 
-        # Iterate through the hourly frames and return the matching price.
         for item in prices:
             ts = item.get("timestamp")
             if not ts:
@@ -254,25 +243,22 @@ class _PstrykNextHourMixin:
             if price_local == next_hour_start:
                 return item.get("price")
 
-        # If we could not find an exact match we return None so HA will treat
-        # the sensor as unavailable instead of silently showing the current
-        # hour again.
         return None
 
 
 class PstrykBuyNextHourPriceSensor(_PstrykNextHourMixin, PstrykBaseSensor):
     """Sensor that shows the buy price for the upcoming hour."""
 
-    _attr_name = "Pstryk Buy Price – Next Hour"
+    _attr_translation_key = "buy_price_next_hour"
     _attr_unique_id = "pstryk_buy_price_next_hour"
-    _attr_icon = "mdi:clock-fast"
+    _unrecorded_attributes = frozenset({"target_hour"})
 
     @property
-    def native_value(self) -> Optional[float]:
+    def native_value(self) -> float | None:
         return self._get_next_hour_price("buy")
 
     @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Include the timestamp this price applies to so users can verify."""
         now = dt_util.now()
         next_hour_start = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
@@ -284,16 +270,16 @@ class PstrykBuyNextHourPriceSensor(_PstrykNextHourMixin, PstrykBaseSensor):
 class PstrykSellNextHourPriceSensor(_PstrykNextHourMixin, PstrykBaseSensor):
     """Sensor that shows the sell price for the upcoming hour."""
 
-    _attr_name = "Pstryk Sell Price – Next Hour"
+    _attr_translation_key = "sell_price_next_hour"
     _attr_unique_id = "pstryk_sell_price_next_hour"
-    _attr_icon = "mdi:clock-outline"
+    _unrecorded_attributes = frozenset({"target_hour"})
 
     @property
-    def native_value(self) -> Optional[float]:
+    def native_value(self) -> float | None:
         return self._get_next_hour_price("sell")
 
     @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         now = dt_util.now()
         next_hour_start = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
         return {
