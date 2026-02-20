@@ -58,16 +58,17 @@ The integration creates the following sensors:
 
 - `sensor.pstryk_buy_price`: Current electricity buying price
 - `sensor.pstryk_sell_price`: Current electricity selling price
+- `sensor.pstryk_buy_price_next_hour`: Buying price for the upcoming hour
+- `sensor.pstryk_sell_price_next_hour`: Selling price for the upcoming hour
 - `binary_sensor.pstryk_buy_cheap_hour`: Indicates if current hour is flagged as cheap for buying
 - `binary_sensor.pstryk_buy_expensive_hour`: Indicates if current hour is flagged as expensive for buying
 - `binary_sensor.pstryk_sell_cheap_hour`: Indicates if current hour is flagged as cheap for selling
 - `binary_sensor.pstryk_sell_expensive_hour`: Indicates if current hour is flagged as expensive for selling
 
-Each price sensor exposes hourly price data via additional attributes:
+Each price sensor exposes hourly price data via additional attributes compatible with [ev_smart_charging](https://github.com/jonasbkarlsson/ev_smart_charging):
 
-- `prices_today` – list of today's prices in the form `[{"time": "ISO", "price": <value>}, ...]`
-- `prices_tomorrow` – list of tomorrow's prices (when available) using the same structure
-- `prices` – combined list of today and tomorrow
+- `prices_today` – list of today's hourly prices: `[{"time": "2025-02-20T00:00:00+01:00", "price": 0.71}, ...]`
+- `prices_tomorrow` – list of tomorrow's hourly prices (same format, empty `[]` when not yet available)
 
 The binary sensors include lists of upcoming cheap or expensive hours.
 
@@ -120,8 +121,7 @@ automation:
 
 To visualise hourly prices you can use the
 [ApexCharts card](https://github.com/RomRider/apexcharts-card) in a Lovelace
-dashboard. The `prices` attribute on each price sensor already contains the
-combined list of today's and tomorrow's prices:
+dashboard:
 
 ```yaml
 type: custom:apexcharts-card
@@ -131,13 +131,15 @@ series:
   - entity: sensor.pstryk_buy_price
     name: Buy Price
     data_generator: |
-      const data = entity.attributes.prices || [];
-      return data.map(i => [i.time, i.price]);
+      const today = entity.attributes.prices_today || [];
+      const tomorrow = entity.attributes.prices_tomorrow || [];
+      return today.concat(tomorrow).map(i => [i.time, i.price]);
   - entity: sensor.pstryk_sell_price
     name: Sell Price
     data_generator: |
-      const data = entity.attributes.prices || [];
-      return data.map(i => [i.time, i.price]);
+      const today = entity.attributes.prices_today || [];
+      const tomorrow = entity.attributes.prices_tomorrow || [];
+      return today.concat(tomorrow).map(i => [i.time, i.price]);
 ```
 
 This configuration will plot all available hourly prices for today and tomorrow.
