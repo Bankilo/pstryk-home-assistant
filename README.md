@@ -69,8 +69,16 @@ Each price sensor exposes hourly price data via additional attributes compatible
 
 - `prices_today` – list of today's hourly prices: `[{"time": "2025-02-20T00:00:00+01:00", "price": 0.71}, ...]`
 - `prices_tomorrow` – list of tomorrow's hourly prices (same format, empty `[]` when not yet available)
+- `is_cheap` – boolean, `true` when the current hour is flagged as cheap
+- `is_expensive` – boolean, `true` when the current hour is flagged as expensive
 
-The binary sensors include lists of upcoming cheap or expensive hours.
+Each next-hour sensor exposes:
+
+- `target_hour` – ISO 8601 timestamp of the hour the price applies to (e.g. `"2025-02-20T14:00:00+01:00"`)
+
+Each binary sensor exposes a list of upcoming cheap or expensive hours:
+
+- `cheap_hours` / `expensive_hours` – `[{"timestamp": "2025-02-20T13:00:00+00:00", "hour": 13, "price": 0.71, "date": "2025-02-20"}, ...]`
 
 ## Usage in Automations
 

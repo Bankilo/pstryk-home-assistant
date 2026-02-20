@@ -1,6 +1,6 @@
 {
   "name": "Pstryk",
-  "domains": ["sensor"],
+  "domains": ["sensor", "binary_sensor"],
   "content_in_root": false,
   "country": "PL",
   "render_readme": true,
