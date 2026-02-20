@@ -6,7 +6,6 @@ from typing import Any
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
-    SensorStateClass,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -20,11 +19,6 @@ from . import PstrykConfigEntry
 from .const import (
     ATTR_IS_CHEAP,
     ATTR_IS_EXPENSIVE,
-    ATTR_NEXT_HOUR_PRICE,
-    ATTR_PRICES,
-    ATTR_PRICES_FUTURE,
-    ATTR_PRICES_TODAY,
-    ATTR_PRICES_TOMORROW,
     DOMAIN,
 )
 from .coordinator import PstrykDataUpdateCoordinator
@@ -52,7 +46,6 @@ class PstrykBaseSensor(CoordinatorEntity, SensorEntity):
     """Base Pstryk sensor entity."""
 
     _attr_has_entity_name = True
-    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_device_class = SensorDeviceClass.MONETARY
     _attr_native_unit_of_measurement = "PLN/kWh"
 
@@ -78,11 +71,14 @@ class PstrykBaseSensor(CoordinatorEntity, SensorEntity):
 
 
 class _PstrykPriceSensor(PstrykBaseSensor):
-    """Shared implementation for buy/sell price sensors."""
+    """Shared implementation for buy/sell price sensors.
 
-    _unrecorded_attributes = frozenset(
-        {ATTR_PRICES_TODAY, ATTR_PRICES_TOMORROW, ATTR_PRICES, ATTR_PRICES_FUTURE, ATTR_IS_CHEAP, ATTR_IS_EXPENSIVE}
-    )
+    Exposes prices_today / prices_tomorrow in the format expected by
+    ev_smart_charging and other consumers:
+        [{"time": "<ISO 8601 with tz>", "price": <float>}, ...]
+    """
+
+    _unrecorded_attributes = frozenset({"prices_today", "prices_tomorrow"})
 
     # Must be set by subclass ("buy" | "sell")
     _price_key: str = "buy"
@@ -106,87 +102,53 @@ class _PstrykPriceSensor(PstrykBaseSensor):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Organise price frames into today / tomorrow / future buckets and
-        expose helper attributes shared by both buy & sell sensors."""
-
+        """Expose price lists compatible with ev_smart_charging."""
         branch = self._price_branch()
         if branch is None:
-            return {}
+            return {"prices_today": [], "prices_tomorrow": []}
 
-        try:
-            now = dt_util.now()
-            prices = branch.get("prices", [])
+        now = dt_util.now()
+        today_date = now.date()
+        tomorrow_date = today_date + timedelta(days=1)
+        prices = branch.get("prices", [])
 
-            today_prices: list[tuple[str, float]] = []
-            tomorrow_prices: list[tuple[str, float]] = []
-            future_prices: list[dict] = []
-            next_hour_price: float | None = None
+        prices_today: list[dict[str, Any]] = []
+        prices_tomorrow: list[dict[str, Any]] = []
 
-            next_hour_start = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        for p in prices:
+            ts_str = p.get("timestamp")
+            if not ts_str:
+                continue
+            p_dt = dt_util.parse_datetime(ts_str)
+            if p_dt is None:
+                continue
 
-            for p in prices:
-                ts_str = p.get("timestamp")
-                if not ts_str:
-                    continue
+            p_local = dt_util.as_local(p_dt)
+            price_val = p.get("price")
+            if price_val is None:
+                continue
 
-                p_dt = dt_util.parse_datetime(ts_str)
-                if p_dt is None:
-                    continue
+            entry = {"time": p_local.isoformat(), "price": price_val}
 
-                p_local = dt_util.as_local(p_dt)
-                price_val = p.get("price")
+            if p_local.date() == today_date:
+                prices_today.append(entry)
+            elif p_local.date() == tomorrow_date:
+                prices_tomorrow.append(entry)
 
-                if p_local.date() == now.date():
-                    today_prices.append((ts_str, price_val))
-                elif p_local.date() == (now.date() + timedelta(days=1)):
-                    tomorrow_prices.append((ts_str, price_val))
-                elif p_local.date() > (now.date() + timedelta(days=1)):
-                    future_prices.append(
-                        {
-                            "timestamp": ts_str,
-                            "hour": p_local.hour,
-                            "price": price_val,
-                            ATTR_IS_CHEAP: p.get(ATTR_IS_CHEAP, False),
-                            ATTR_IS_EXPENSIVE: p.get(ATTR_IS_EXPENSIVE, False),
-                        }
-                    )
+        prices_today.sort(key=lambda x: x["time"])
+        prices_tomorrow.sort(key=lambda x: x["time"])
 
-                # Determine next-hour price (exact match on timestamp)
-                if p_local == next_hour_start:
-                    next_hour_price = p.get("price")
+        attrs: dict[str, Any] = {
+            "prices_today": prices_today,
+            "prices_tomorrow": prices_tomorrow,
+        }
 
-            attrs: dict[str, Any] = {}
-            if today_prices:
-                attrs[ATTR_PRICES_TODAY] = [
-                    {"time": ts, "price": price}
-                    for ts, price in sorted(today_prices, key=lambda x: x[0])
-                ]
-            if tomorrow_prices:
-                attrs[ATTR_PRICES_TOMORROW] = [
-                    {"time": ts, "price": price}
-                    for ts, price in sorted(tomorrow_prices, key=lambda x: x[0])
-                ]
-            if today_prices or tomorrow_prices:
-                combined = sorted(today_prices + tomorrow_prices, key=lambda x: x[0])
-                attrs[ATTR_PRICES] = [
-                    {"time": ts, "price": price}
-                    for ts, price in combined
-                ]
-            if future_prices:
-                attrs[ATTR_PRICES_FUTURE] = sorted(future_prices, key=lambda x: x["timestamp"])
-            if next_hour_price is not None:
-                attrs[ATTR_NEXT_HOUR_PRICE] = next_hour_price
+        if branch.get(ATTR_IS_CHEAP) is not None:
+            attrs[ATTR_IS_CHEAP] = branch[ATTR_IS_CHEAP]
+        if branch.get(ATTR_IS_EXPENSIVE) is not None:
+            attrs[ATTR_IS_EXPENSIVE] = branch[ATTR_IS_EXPENSIVE]
 
-            # Flags for the current hour
-            if branch.get(ATTR_IS_CHEAP) is not None:
-                attrs[ATTR_IS_CHEAP] = branch.get(ATTR_IS_CHEAP, False)
-            if branch.get(ATTR_IS_EXPENSIVE) is not None:
-                attrs[ATTR_IS_EXPENSIVE] = branch.get(ATTR_IS_EXPENSIVE, False)
-
-            return attrs
-        except Exception as err:  # pylint: disable=broad-except
-            _LOGGER.error("Error extracting %s price attributes: %s", self._price_key, err)
-            return {}
+        return attrs
 
 class PstrykBuyPriceSensor(_PstrykPriceSensor):
     """Sensor for Pstryk buy prices."""
