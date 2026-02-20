@@ -35,18 +35,14 @@
         "name": "Buy price",
         "state_attributes": {
           "prices_today": { "name": "Today's prices" },
-          "prices_tomorrow": { "name": "Tomorrow's prices" },
-          "prices": { "name": "Today and tomorrow" },
-          "next_hour_price": { "name": "Next hour price" }
+          "prices_tomorrow": { "name": "Tomorrow's prices" }
         }
       },
       "sell_price": {
         "name": "Sell price",
         "state_attributes": {
           "prices_today": { "name": "Today's prices" },
-          "prices_tomorrow": { "name": "Tomorrow's prices" },
-          "prices": { "name": "Today and tomorrow" },
-          "next_hour_price": { "name": "Next hour price" }
+          "prices_tomorrow": { "name": "Tomorrow's prices" }
         }
       },
       "buy_price_next_hour": {
