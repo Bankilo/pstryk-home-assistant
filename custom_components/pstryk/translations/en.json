@@ -9,6 +9,13 @@
           "name": "Name"
         }
       },
+      "reconfigure": {
+        "title": "Reconfigure Pstryk.pl",
+        "description": "Update your Pstryk.pl API token.",
+        "data": {
+          "api_token": "API Token"
+        }
+      },
       "reauth_confirm": {
         "title": "Re-authenticate with Pstryk.pl",
         "description": "Your API token is no longer valid. Please enter a new token.",
@@ -26,7 +33,8 @@
     },
     "abort": {
       "already_configured": "Pstryk.pl is already configured.",
-      "reauth_successful": "Re-authentication was successful."
+      "reauth_successful": "Re-authentication was successful.",
+      "reconfigure_successful": "Reconfiguration was successful."
     }
   },
   "entity": {
