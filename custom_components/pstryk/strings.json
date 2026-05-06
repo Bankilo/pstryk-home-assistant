@@ -34,6 +34,7 @@
       "buy_price": {
         "name": "Buy price",
         "state_attributes": {
+          "prices": { "name": "Prices" },
           "prices_today": { "name": "Today's prices" },
           "prices_tomorrow": { "name": "Tomorrow's prices" }
         }
@@ -41,6 +42,7 @@
       "sell_price": {
         "name": "Sell price",
         "state_attributes": {
+          "prices": { "name": "Prices" },
           "prices_today": { "name": "Today's prices" },
           "prices_tomorrow": { "name": "Tomorrow's prices" }
         }
