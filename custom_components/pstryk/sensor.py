@@ -78,7 +78,7 @@ class _PstrykPriceSensor(PstrykBaseSensor):
         [{"time": "<ISO 8601 with tz>", "price": <float>}, ...]
     """
 
-    _unrecorded_attributes = frozenset({"prices_today", "prices_tomorrow"})
+    _unrecorded_attributes = frozenset({"prices", "prices_today", "prices_tomorrow"})
 
     # Must be set by subclass ("buy" | "sell")
     _price_key: str = "buy"
@@ -105,7 +105,7 @@ class _PstrykPriceSensor(PstrykBaseSensor):
         """Expose price lists compatible with ev_smart_charging."""
         branch = self._price_branch()
         if branch is None:
-            return {"prices_today": [], "prices_tomorrow": []}
+            return {"prices_today": [], "prices_tomorrow": [], "prices": []}
 
         now = dt_util.now()
         today_date = now.date()
@@ -137,10 +137,12 @@ class _PstrykPriceSensor(PstrykBaseSensor):
 
         prices_today.sort(key=lambda x: x["time"])
         prices_tomorrow.sort(key=lambda x: x["time"])
+        combined_prices = sorted(prices_today + prices_tomorrow, key=lambda x: x["time"])
 
         attrs: dict[str, Any] = {
             "prices_today": prices_today,
             "prices_tomorrow": prices_tomorrow,
+            "prices": combined_prices,
         }
 
         if branch.get(ATTR_IS_CHEAP) is not None:
