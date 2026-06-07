@@ -29,14 +29,19 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-def _to_float_precise(value: str | float | int | Decimal, ndigits: int = 3) -> float | None:
+def _to_float_precise(value: str | float | int | Decimal | None, ndigits: int = 3) -> float | None:
     """Convert incoming price string/number to float with Decimal for precise
     rounding.
 
-    Returns ``None`` if conversion fails.
+    Returns ``None`` if conversion fails or value is None/empty.
     """
+    if value is None:
+        return None
     try:
-        dec = Decimal(str(value).replace(",", ".").strip())
+        raw = str(value).replace(",", ".").strip()
+        if not raw:
+            return None
+        dec = Decimal(raw)
         quant = Decimal("1e-{0}".format(ndigits))
         dec = dec.quantize(quant, rounding=ROUND_HALF_UP)
         return float(dec)
@@ -95,6 +100,54 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
 
         await asyncio.to_thread(_write)
 
+    def _recompute_current_hour(self, branch: dict[str, Any], now_utc, branch_name: str = "") -> None:
+        """Recompute current-hour fields from cached prices."""
+        prices = branch.get("prices", [])
+
+        _LOGGER.debug("Recomputing current hour for '%s' branch from cache (%d entries, now_utc=%s)",
+            branch_name, len(prices), now_utc.isoformat()
+        )
+
+        # Set defaults when no matching hour is found
+        branch["current_price"] = None
+        branch[ATTR_IS_CHEAP] = False
+        branch[ATTR_IS_EXPENSIVE] = False
+        branch["has_future_data"] = False
+
+        today = dt_util.as_local(now_utc).date()
+        matched = False
+
+        for entry in prices:
+            ts_str = entry.get("timestamp")
+            if not ts_str:
+                continue
+
+            start = dt_util.parse_datetime(ts_str)
+            if not start:
+                continue
+            end = start + timedelta(hours=1)
+
+            if start <= now_utc < end:
+                branch["current_price"] = entry.get("price")
+                branch[ATTR_IS_CHEAP] = entry.get(ATTR_IS_CHEAP, False)
+                branch[ATTR_IS_EXPENSIVE] = entry.get(ATTR_IS_EXPENSIVE, False)
+                _LOGGER.debug(
+                    "Cached current hour matched for '%s': %s, "
+                    "price=%s, is_cheap=%s, is_expensive=%s",
+                    branch_name, ts_str,
+                    branch["current_price"],
+                    branch[ATTR_IS_CHEAP],
+                    branch[ATTR_IS_EXPENSIVE],
+                )
+                matched = True
+
+            local_start = dt_util.as_local(start)
+            if local_start.date() > today:
+                branch["has_future_data"] = True
+
+        if not matched:
+            _LOGGER.debug("No cached entry matched current hour for '%s' branch", branch_name)
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Update data via API."""
         try:
@@ -119,6 +172,13 @@ class PstrykDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.warning("API error: %s. Loading data from cache if available.", error)
             cached = await self._load_cache()
             if cached is not None:
+                _LOGGER.debug("API fetch failed, recomputing current hour from cache")
+                now_utc = dt_util.utcnow()
+                for branch_key in ("buy", "sell"):
+                    if branch_key in cached:
+                        self._recompute_current_hour(
+                            cached[branch_key], now_utc, branch_name=branch_key
+                        )
                 return cached
             raise UpdateFailed(f"Error communicating with API: {error}") from error
 
