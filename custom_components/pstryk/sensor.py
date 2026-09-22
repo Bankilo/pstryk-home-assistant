@@ -111,6 +111,8 @@ class _PstrykPriceSensor(PstrykBaseSensor):
         today_date = now.date()
         tomorrow_date = today_date + timedelta(days=1)
         prices = branch.get("prices", [])
+        if not isinstance(prices, list):
+            prices = []
 
         prices_today: list[dict[str, Any]] = []
         prices_tomorrow: list[dict[str, Any]] = []
