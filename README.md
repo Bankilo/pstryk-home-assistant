@@ -158,6 +158,11 @@ The integration caches the last successful API response to
 `config/pstryk_cache.json`. If the Pstryk.pl API becomes unavailable, cached
 data will be used so your sensors continue to report prices.
 
+During an outage, current prices and cheap/expensive flags are recalculated for
+the current hour from the cached hourly table. Once that table no longer covers
+the current hour, current price sensors report an unknown value and the flags
+are cleared.
+
 ## Troubleshooting
 
 If you encounter issues with the integration:
