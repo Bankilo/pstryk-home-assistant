@@ -111,6 +111,29 @@ class PstrykConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user", data_schema=DATA_SCHEMA, errors=errors
         )
 
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle reconfiguration (user-initiated token update)."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            valid, error = await validate_api_token(
+                self.hass, user_input[CONF_API_TOKEN]
+            )
+            if valid:
+                return self.async_update_reload_and_abort(
+                    self._get_reconfigure_entry(),
+                    data_updates={CONF_API_TOKEN: user_input[CONF_API_TOKEN]},
+                )
+            errors["base"] = error
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema({vol.Required(CONF_API_TOKEN): str}),
+            errors=errors,
+        )
+
     async def async_step_reauth(
         self, entry_data: dict[str, Any]
     ) -> ConfigFlowResult:
